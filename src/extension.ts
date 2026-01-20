@@ -11,6 +11,115 @@ type ParsedFileChange = FileChange & {
   key: string;
 };
 
+function extractCurrentPath(path: string): string {
+  const arrowIndex = path.lastIndexOf("->");
+  if (arrowIndex === -1) {
+    return path.trim();
+  }
+  return path.slice(arrowIndex + 2).trim();
+}
+
+function normalizeGroupingPath(path: string): string {
+  const trimmed = extractCurrentPath(path).trim();
+  return trimmed.replace(/^\.?\//, "");
+}
+
+function getTopLevelFolder(path: string): string | null {
+  const normalized = normalizeGroupingPath(path);
+  const parts = normalized.split("/");
+  if (parts.length <= 1) {
+    return null;
+  }
+  return parts[0];
+}
+
+function detectSignalFiles(files: FileChange[]): string[] {
+  const signals = new Set<string>();
+
+  for (const file of files) {
+    const normalized = normalizeGroupingPath(file.path).toLowerCase();
+
+    if (normalized.endsWith("package.json")) {
+      signals.add("package.json");
+    }
+
+    if (
+      normalized.includes("migrations/") ||
+      normalized.includes("migration/") ||
+      normalized.endsWith(".sql")
+    ) {
+      signals.add("migrations");
+    }
+
+    if (
+      normalized.includes("config/") ||
+      normalized.includes("/config.") ||
+      normalized.endsWith(".env") ||
+      normalized.includes(".env.") ||
+      normalized.endsWith(".yml") ||
+      normalized.endsWith(".yaml")
+    ) {
+      signals.add("config");
+    }
+  }
+
+  return Array.from(signals).sort();
+}
+
+function buildChangeBullets(files: FileChange[]): string[] {
+  if (files.length === 0) {
+    return [];
+  }
+
+  const bullets: string[] = [];
+  const total = files.length;
+  bullets.push(`Updated ${total} file${total === 1 ? "" : "s"}.`);
+
+  const folderCounts = new Map<string, number>();
+  let rootCount = 0;
+
+  for (const file of files) {
+    const folder = getTopLevelFolder(file.path);
+    if (folder) {
+      folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
+    } else {
+      rootCount += 1;
+    }
+  }
+
+  if (folderCounts.size > 0) {
+    const sorted = Array.from(folderCounts.entries()).sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1];
+      }
+      return a[0].localeCompare(b[0]);
+    });
+
+    for (const [folder, count] of sorted) {
+      bullets.push(
+        `Changes in ${folder}/ (${count} file${count === 1 ? "" : "s"}).`
+      );
+    }
+  } else if (rootCount > 0) {
+    bullets.push(
+      `Changes in root files (${rootCount} file${
+        rootCount === 1 ? "" : "s"
+      }).`
+    );
+  } else {
+    bullets.push("Changes by folder: none detected.");
+  }
+
+  const signals = detectSignalFiles(files);
+  if (signals.length > 0) {
+    bullets.push(`Signal files touched: ${signals.join(", ")}.`);
+  } else {
+    bullets.push("Signal files touched: none detected.");
+  }
+
+  return bullets;
+}
+
 function execGit(command: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(
@@ -251,6 +360,8 @@ async function generateDescriptionFromStaged(): Promise<void> {
     await vscode.window.showInformationMessage("No staged changes");
     return;
   }
+  const files = mergeChanges(stagedChanges, []);
+  const changeBullets = buildChangeBullets(files);
 
   const config = vscode.workspace.getConfiguration("prd");
   const maxDiffLines = Math.max(
@@ -277,7 +388,8 @@ async function generateDescriptionFromStaged(): Promise<void> {
   const { added, removed } = summarizeDiff(limitedDiff);
 
   const markdown = buildMarkdown({
-    files: mergeChanges(stagedChanges, []),
+    files,
+    changeBullets,
     added,
     removed,
     truncated,
@@ -364,6 +476,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const rangeChanges = parseNameStatus(filesOutputRange);
   const workingChanges = parseNameStatus(filesOutputWorking);
   const files = mergeChanges(rangeChanges, workingChanges);
+  const changeBullets = buildChangeBullets(files);
   if (files.length === 0) {
     await vscode.window.showInformationMessage(
       `No changes against ${baseBranch}`
@@ -381,6 +494,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
 
   const markdown = buildMarkdown({
     files,
+    changeBullets,
     added,
     removed,
     truncated,

@@ -7,6 +7,7 @@ export type FileChange = {
 
 export type TemplateOptions = {
   files: FileChange[];
+  changeBullets: string[];
   added: number;
   removed: number;
   truncated: boolean;
@@ -21,6 +22,7 @@ export type TemplateOptions = {
 export function buildMarkdown(options: TemplateOptions): string {
   const {
     files,
+    changeBullets,
     added,
     removed,
     truncated,
@@ -44,24 +46,30 @@ export function buildMarkdown(options: TemplateOptions): string {
   }
 
   const changesLines =
-    files.length > 0
-      ? files.map((file) => `- ${file.status}: ${file.path}`)
-      : [`- ${emptyChangesLine}`];
+    changeBullets.length > 0 ? changeBullets : [emptyChangesLine];
 
   const filesLines =
-    files.length > 0 ? files.map((file) => `- ${file.path}`) : changesLines;
+    files.length > 0
+      ? files.map((file) => `- ${file.status}: ${file.path}`)
+      : [];
 
   const output: string[] = [
     "## Summary",
     ...summaryLines.map((line) => `- ${line}`),
     "",
     "## Changes",
-    ...changesLines,
+    ...changesLines.map((line) => `- ${line}`),
     "",
   ];
 
   if (includeFilesSection) {
-    output.push("## Files changed", ...filesLines, "");
+    output.push(
+      "## Files changed",
+      ...(filesLines.length > 0 ? filesLines : [`- ${emptyChangesLine}`]),
+      ""
+    );
+  } else if (filesLines.length > 0) {
+    output.push("Files changed:", ...filesLines, "");
   }
 
   output.push(
