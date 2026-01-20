@@ -504,13 +504,31 @@ async function openMarkdownDocument(content: string): Promise<void> {
   });
 }
 
-async function getWorkspaceRoot(): Promise<string | null> {
+type WorkspacePick = {
+  label: string;
+  description: string;
+  folder: vscode.WorkspaceFolder;
+};
+
+async function getWorkspaceFolder(): Promise<vscode.WorkspaceFolder | null> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     await vscode.window.showErrorMessage("Open a folder");
     return null;
   }
-  return folders[0].uri.fsPath;
+  if (folders.length === 1) {
+    return folders[0];
+  }
+
+  const picks: WorkspacePick[] = folders.map((folder) => ({
+    label: folder.name,
+    description: folder.uri.fsPath,
+    folder,
+  }));
+  const selected = await vscode.window.showQuickPick(picks, {
+    placeHolder: "Select the workspace folder to use",
+  });
+  return selected ? selected.folder : null;
 }
 
 type MarkdownResult = {
@@ -619,10 +637,11 @@ async function resolveBaseBranch(
 }
 
 async function generateDescriptionFromStaged(): Promise<void> {
-  const workspaceRoot = await getWorkspaceRoot();
-  if (!workspaceRoot) {
+  const workspaceFolder = await getWorkspaceFolder();
+  if (!workspaceFolder) {
     return;
   }
+  const workspaceRoot = workspaceFolder.uri.fsPath;
 
   const result = await buildStagedMarkdown(workspaceRoot);
   if (!result) {
@@ -644,10 +663,11 @@ async function insertDescriptionHere(): Promise<void> {
     return;
   }
 
-  const workspaceRoot = await getWorkspaceRoot();
-  if (!workspaceRoot) {
+  const workspaceFolder = await getWorkspaceFolder();
+  if (!workspaceFolder) {
     return;
   }
+  const workspaceRoot = workspaceFolder.uri.fsPath;
 
   const result = await buildStagedMarkdown(workspaceRoot);
   if (!result) {
@@ -670,10 +690,11 @@ async function insertDescriptionHere(): Promise<void> {
 }
 
 async function generateDescriptionAgainstBase(): Promise<void> {
-  const workspaceRoot = await getWorkspaceRoot();
-  if (!workspaceRoot) {
+  const workspaceFolder = await getWorkspaceFolder();
+  if (!workspaceFolder) {
     return;
   }
+  const workspaceRoot = workspaceFolder.uri.fsPath;
   const config = vscode.workspace.getConfiguration("prd");
   const maxDiffLines = Math.max(
     config.get<number>("maxDiffLines", 2000) ?? 2000,
