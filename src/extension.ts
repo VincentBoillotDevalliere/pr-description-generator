@@ -70,6 +70,73 @@ function buildTestingLines(files: FileChange[]): string[] {
   ];
 }
 
+function buildRiskAssessment(files: FileChange[]): {
+  level: "Low" | "Medium" | "High";
+  areas: string[];
+} {
+  const areas = new Set<string>();
+  let hasHigh = false;
+  let hasMedium = false;
+
+  for (const file of files) {
+    const normalized = normalizeGroupingPath(file.path).toLowerCase();
+
+    if (
+      normalized.includes("migrations/") ||
+      normalized.includes("migration/") ||
+      normalized.includes("prisma") ||
+      normalized.includes("flyway") ||
+      normalized.endsWith(".sql")
+    ) {
+      areas.add("database");
+      hasHigh = true;
+    }
+
+    if (
+      normalized.includes("auth") ||
+      normalized.includes("jwt") ||
+      normalized.includes("oauth") ||
+      normalized.includes("permission")
+    ) {
+      areas.add("auth/security");
+      hasHigh = true;
+    }
+
+    if (
+      normalized.includes("terraform") ||
+      normalized.includes("helm") ||
+      normalized.includes("k8s") ||
+      normalized.includes(".github/workflows")
+    ) {
+      areas.add("infra");
+      hasHigh = true;
+    }
+
+    if (
+      normalized.includes("/config/") ||
+      normalized.startsWith("config/") ||
+      normalized.includes(".env") ||
+      normalized.endsWith(".yml") ||
+      normalized.endsWith(".yaml")
+    ) {
+      areas.add("config");
+      hasMedium = true;
+    }
+  }
+
+  let level: "Low" | "Medium" | "High" = "Low";
+  if (hasHigh) {
+    level = "High";
+  } else if (hasMedium) {
+    level = "Medium";
+  }
+
+  const order = ["database", "auth/security", "infra", "config"];
+  const sortedAreas = order.filter((area) => areas.has(area));
+
+  return { level, areas: sortedAreas };
+}
+
 function detectSignalFiles(files: FileChange[]): string[] {
   const signals = new Set<string>();
 
@@ -437,6 +504,84 @@ async function openMarkdownDocument(content: string): Promise<void> {
   });
 }
 
+async function getWorkspaceRoot(): Promise<string | null> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    await vscode.window.showErrorMessage("Open a folder");
+    return null;
+  }
+  return folders[0].uri.fsPath;
+}
+
+type MarkdownResult = {
+  markdown: string;
+  copyToClipboard: boolean;
+};
+
+async function buildStagedMarkdown(
+  workspaceRoot: string
+): Promise<MarkdownResult | null> {
+  let statusOutput: string;
+
+  try {
+    statusOutput = await execGit("git status --porcelain", workspaceRoot);
+  } catch (error) {
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
+    return null;
+  }
+
+  const stagedChanges = parsePorcelainStagedChanges(statusOutput);
+  if (stagedChanges.length === 0) {
+    await vscode.window.showInformationMessage("No staged changes");
+    return null;
+  }
+  const files = mergeChanges(stagedChanges, []);
+  const changeBullets = buildChangeBullets(files);
+  const testingLines = buildTestingLines(files);
+  const risk = buildRiskAssessment(files);
+
+  const config = vscode.workspace.getConfiguration("prd");
+  const maxDiffLines = Math.max(
+    config.get<number>("maxDiffLines", 2000) ?? 2000,
+    1
+  );
+  const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
+  const includeFilesSection =
+    config.get<boolean>("includeFilesSection", false) ?? false;
+
+  let diffOutput: string;
+  try {
+    diffOutput = await execGit("git diff --staged --no-color", workspaceRoot);
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      getGitErrorMessage(error, "Failed to run git diff --staged")
+    );
+    return null;
+  }
+
+  const preparedDiff = prepareDiffForAnalysis(diffOutput, maxDiffLines);
+  const { added, removed } = summarizeDiff(preparedDiff.text);
+
+  const markdown = buildMarkdown({
+    files,
+    changeBullets,
+    testingLines,
+    riskLevel: risk.level,
+    areasImpacted: risk.areas,
+    added,
+    removed,
+    truncated: preparedDiff.truncated,
+    maxLines: maxDiffLines,
+    analyzedLines: preparedDiff.analyzedLines,
+    summaryLabel: "Staged changes",
+    diffLabel: "staged",
+    emptyChangesLine: "No staged files detected.",
+    includeFilesSection,
+  });
+
+  return { markdown, copyToClipboard };
+}
+
 async function ensureGitRepo(workspaceRoot: string): Promise<void> {
   try {
     await execGit("git status --porcelain", workspaceRoot);
@@ -474,84 +619,61 @@ async function resolveBaseBranch(
 }
 
 async function generateDescriptionFromStaged(): Promise<void> {
-  const folders = vscode.workspace.workspaceFolders;
-  if (!folders || folders.length === 0) {
-    await vscode.window.showErrorMessage("Open a folder");
+  const workspaceRoot = await getWorkspaceRoot();
+  if (!workspaceRoot) {
     return;
   }
 
-  const workspaceRoot = folders[0].uri.fsPath;
-  let statusOutput: string;
-
-  try {
-    statusOutput = await execGit("git status --porcelain", workspaceRoot);
-  } catch (error) {
-    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
+  const result = await buildStagedMarkdown(workspaceRoot);
+  if (!result) {
     return;
   }
 
-  const stagedChanges = parsePorcelainStagedChanges(statusOutput);
-  if (stagedChanges.length === 0) {
-    await vscode.window.showInformationMessage("No staged changes");
-    return;
+  await openMarkdownDocument(result.markdown);
+
+  if (result.copyToClipboard) {
+    await vscode.env.clipboard.writeText(result.markdown);
+    await vscode.window.showInformationMessage("Copied to clipboard");
   }
-  const files = mergeChanges(stagedChanges, []);
-  const changeBullets = buildChangeBullets(files);
-  const testingLines = buildTestingLines(files);
+}
 
-  const config = vscode.workspace.getConfiguration("prd");
-  const maxDiffLines = Math.max(
-    config.get<number>("maxDiffLines", 2000) ?? 2000,
-    1
-  );
-  const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
-  const includeFilesSection =
-    config.get<boolean>("includeFilesSection", false) ?? false;
-
-  let diffOutput: string;
-  try {
-    diffOutput = await execGit("git diff --staged --no-color", workspaceRoot);
-  } catch (error) {
-    await vscode.window.showErrorMessage(
-      getGitErrorMessage(error, "Failed to run git diff --staged")
-    );
+async function insertDescriptionHere(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    await vscode.window.showErrorMessage("Open a file to insert the description.");
     return;
   }
 
-  const preparedDiff = prepareDiffForAnalysis(diffOutput, maxDiffLines);
-  const { added, removed } = summarizeDiff(preparedDiff.text);
+  const workspaceRoot = await getWorkspaceRoot();
+  if (!workspaceRoot) {
+    return;
+  }
 
-  const markdown = buildMarkdown({
-    files,
-    changeBullets,
-    testingLines,
-    added,
-    removed,
-    truncated: preparedDiff.truncated,
-    maxLines: maxDiffLines,
-    analyzedLines: preparedDiff.analyzedLines,
-    summaryLabel: "Staged changes",
-    diffLabel: "staged",
-    emptyChangesLine: "No staged files detected.",
-    includeFilesSection,
+  const result = await buildStagedMarkdown(workspaceRoot);
+  if (!result) {
+    return;
+  }
+
+  const selection = editor.selection;
+  await editor.edit((edit) => {
+    if (selection && !selection.isEmpty) {
+      edit.replace(selection, result.markdown);
+    } else {
+      edit.insert(selection.active, result.markdown);
+    }
   });
 
-  await openMarkdownDocument(markdown);
-
-  if (copyToClipboard) {
-    await vscode.env.clipboard.writeText(markdown);
+  if (result.copyToClipboard) {
+    await vscode.env.clipboard.writeText(result.markdown);
     await vscode.window.showInformationMessage("Copied to clipboard");
   }
 }
 
 async function generateDescriptionAgainstBase(): Promise<void> {
-  const folders = vscode.workspace.workspaceFolders;
-  if (!folders || folders.length === 0) {
-    await vscode.window.showErrorMessage("Open a folder");
+  const workspaceRoot = await getWorkspaceRoot();
+  if (!workspaceRoot) {
     return;
   }
-
-  const workspaceRoot = folders[0].uri.fsPath;
   const config = vscode.workspace.getConfiguration("prd");
   const maxDiffLines = Math.max(
     config.get<number>("maxDiffLines", 2000) ?? 2000,
@@ -612,6 +734,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const files = mergeChanges(rangeChanges, workingChanges);
   const changeBullets = buildChangeBullets(files);
   const testingLines = buildTestingLines(files);
+  const risk = buildRiskAssessment(files);
   if (files.length === 0) {
     await vscode.window.showInformationMessage(
       `No changes against ${baseBranch}`
@@ -629,6 +752,8 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     files,
     changeBullets,
     testingLines,
+    riskLevel: risk.level,
+    areasImpacted: risk.areas,
     added,
     removed,
     truncated: preparedDiff.truncated,
@@ -657,7 +782,11 @@ export function activate(context: vscode.ExtensionContext): void {
     "prd.generateDescriptionBase",
     generateDescriptionAgainstBase
   );
-  context.subscriptions.push(stagedDisposable, baseDisposable);
+  const insertDisposable = vscode.commands.registerCommand(
+    "prd.insertDescriptionHere",
+    insertDescriptionHere
+  );
+  context.subscriptions.push(stagedDisposable, baseDisposable, insertDisposable);
 }
 
 export function deactivate(): void {}

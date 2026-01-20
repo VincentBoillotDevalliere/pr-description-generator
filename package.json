@@ -26,7 +26,8 @@
   },
   "activationEvents": [
     "onCommand:prd.generateDescriptionStaged",
-    "onCommand:prd.generateDescriptionBase"
+    "onCommand:prd.generateDescriptionBase",
+    "onCommand:prd.insertDescriptionHere"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -38,6 +39,10 @@
       {
         "command": "prd.generateDescriptionBase",
         "title": "PRD: Generate PR Description (against base branch)"
+      },
+      {
+        "command": "prd.insertDescriptionHere",
+        "title": "PRD: Insert PR Description Here"
       }
     ],
     "configuration": {

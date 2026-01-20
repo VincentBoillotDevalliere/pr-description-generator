@@ -12,6 +12,10 @@ Or generate against a base branch:
 
 `PRD: Generate PR Description (against base branch)`
 
+Or insert the description into the current editor:
+
+`PRD: Insert PR Description Here`
+
 ## Settings
 
 - `prd.baseBranch`: Base branch to diff against (default: main).

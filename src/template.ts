@@ -9,6 +9,8 @@ export type TemplateOptions = {
   files: FileChange[];
   changeBullets: string[];
   testingLines: string[];
+  riskLevel: string;
+  areasImpacted: string[];
   added: number;
   removed: number;
   truncated: boolean;
@@ -25,6 +27,8 @@ export function buildMarkdown(options: TemplateOptions): string {
     files,
     changeBullets,
     testingLines,
+    riskLevel,
+    areasImpacted,
     added,
     removed,
     truncated,
@@ -81,8 +85,10 @@ export function buildMarkdown(options: TemplateOptions): string {
       : ["- [ ] Not run (not specified)."]),
     "",
     "## Risk / Impact",
-    "- Level: TBD",
-    "- Areas impacted: TBD",
+    `- Level: ${riskLevel}`,
+    `- Areas impacted: ${
+      areasImpacted.length > 0 ? areasImpacted.join(", ") : "none detected."
+    }`,
     "",
     "## Rollout / Backout",
     "- Rollout: TBD",
