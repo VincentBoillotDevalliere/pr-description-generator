@@ -2,6 +2,14 @@
   "name": "pr-description-generator",
   "displayName": "PR Description Generator",
   "description": "Generate a PR description from staged git changes.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vincentdevalliere/pr-description-generator.git"
+  },
+  "homepage": "https://github.com/vincentdevalliere/pr-description-generator/blob/main/README.md",
+  "bugs": {
+    "url": "https://github.com/vincentdevalliere/pr-description-generator/issues"
+  },
   "version": "0.0.1",
   "publisher": "local",
   "engines": {
@@ -10,20 +18,36 @@
   "categories": [
     "Other"
   ],
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js"
+  },
   "activationEvents": [
-    "onCommand:prd.generateDescriptionStaged"
+    "onCommand:prd.generateDescriptionStaged",
+    "onCommand:prd.generateDescriptionBase"
   ],
-  "main": "./src/extension.js",
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "prd.generateDescriptionStaged",
         "title": "PRD: Generate PR Description (staged)"
+      },
+      {
+        "command": "prd.generateDescriptionBase",
+        "title": "PRD: Generate PR Description (against base branch)"
       }
     ],
     "configuration": {
       "title": "PR Description Generator",
       "properties": {
+        "prd.baseBranch": {
+          "type": "string",
+          "default": "main",
+          "description": "Base branch used when generating a PR description against a branch."
+        },
         "prd.maxDiffLines": {
           "type": "number",
           "default": 2000,

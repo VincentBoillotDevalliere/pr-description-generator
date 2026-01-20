@@ -1,0 +1,24 @@
+# VS Code extension files
+.vscode
+*.vsix
+
+# TypeScript build outputs
+out/
+dist/
+
+# NPM dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+
+# OS specific files
+.DS_Store
+Thumbs.db
