@@ -11,6 +11,12 @@ type ParsedFileChange = FileChange & {
   key: string;
 };
 
+type PreparedDiff = {
+  text: string;
+  truncated: boolean;
+  analyzedLines: number;
+};
+
 function extractCurrentPath(path: string): string {
   const arrowIndex = path.lastIndexOf("->");
   if (arrowIndex === -1) {
@@ -329,6 +335,39 @@ function summarizeDiff(diffText: string): DiffSummary {
   return { added, removed };
 }
 
+function prepareDiffForAnalysis(diffText: string, maxLines: number): PreparedDiff {
+  if (!diffText || maxLines <= 0) {
+    return {
+      text: "",
+      truncated: Boolean(diffText),
+      analyzedLines: 0,
+    };
+  }
+
+  let index = 0;
+  let lines = 0;
+  let lastIndex = 0;
+
+  while (lines < maxLines && index < diffText.length) {
+    const nextNewline = diffText.indexOf("\n", index);
+    if (nextNewline === -1) {
+      lines += 1;
+      lastIndex = diffText.length;
+      index = diffText.length;
+      break;
+    }
+    lines += 1;
+    index = nextNewline + 1;
+    lastIndex = index;
+  }
+
+  return {
+    text: diffText.slice(0, lastIndex),
+    truncated: index < diffText.length,
+    analyzedLines: lines,
+  };
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -479,10 +518,8 @@ async function generateDescriptionFromStaged(): Promise<void> {
     return;
   }
 
-  const diffLines = diffOutput ? diffOutput.split(/\r?\n/) : [];
-  const truncated = diffLines.length > maxDiffLines;
-  const limitedDiff = diffLines.slice(0, maxDiffLines).join("\n");
-  const { added, removed } = summarizeDiff(limitedDiff);
+  const preparedDiff = prepareDiffForAnalysis(diffOutput, maxDiffLines);
+  const { added, removed } = summarizeDiff(preparedDiff.text);
 
   const markdown = buildMarkdown({
     files,
@@ -490,9 +527,9 @@ async function generateDescriptionFromStaged(): Promise<void> {
     testingLines,
     added,
     removed,
-    truncated,
+    truncated: preparedDiff.truncated,
     maxLines: maxDiffLines,
-    analyzedLines: truncated ? maxDiffLines : diffLines.length,
+    analyzedLines: preparedDiff.analyzedLines,
     summaryLabel: "Staged changes",
     diffLabel: "staged",
     emptyChangesLine: "No staged files detected.",
@@ -585,10 +622,8 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const combinedDiff = [diffOutputRange, diffOutputWorking]
     .filter(Boolean)
     .join("\n");
-  const diffLines = combinedDiff ? combinedDiff.split(/\r?\n/) : [];
-  const truncated = diffLines.length > maxDiffLines;
-  const limitedDiff = diffLines.slice(0, maxDiffLines).join("\n");
-  const { added, removed } = summarizeDiff(limitedDiff);
+  const preparedDiff = prepareDiffForAnalysis(combinedDiff, maxDiffLines);
+  const { added, removed } = summarizeDiff(preparedDiff.text);
 
   const markdown = buildMarkdown({
     files,
@@ -596,9 +631,9 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     testingLines,
     added,
     removed,
-    truncated,
+    truncated: preparedDiff.truncated,
     maxLines: maxDiffLines,
-    analyzedLines: truncated ? maxDiffLines : diffLines.length,
+    analyzedLines: preparedDiff.analyzedLines,
     summaryLabel: `Changes against ${baseBranch}`,
     diffLabel: `against ${baseBranch}`,
     emptyChangesLine: `No changes detected against ${baseBranch}.`,
