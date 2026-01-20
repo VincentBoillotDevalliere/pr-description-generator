@@ -8,6 +8,7 @@ export type FileChange = {
 export type TemplateOptions = {
   files: FileChange[];
   changeBullets: string[];
+  testingLines: string[];
   added: number;
   removed: number;
   truncated: boolean;
@@ -23,6 +24,7 @@ export function buildMarkdown(options: TemplateOptions): string {
   const {
     files,
     changeBullets,
+    testingLines,
     added,
     removed,
     truncated,
@@ -74,7 +76,9 @@ export function buildMarkdown(options: TemplateOptions): string {
 
   output.push(
     "## Testing",
-    "- [ ] Not run (not specified).",
+    ...(testingLines.length > 0
+      ? testingLines
+      : ["- [ ] Not run (not specified)."]),
     "",
     "## Risk / Impact",
     "- Level: TBD",

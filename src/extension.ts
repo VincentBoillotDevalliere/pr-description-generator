@@ -33,6 +33,37 @@ function getTopLevelFolder(path: string): string | null {
   return parts[0];
 }
 
+function isTestFile(change: FileChange): boolean {
+  const normalized = normalizeGroupingPath(change.path).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  const filename = parts[parts.length - 1] || "";
+
+  if (
+    parts.some((part) =>
+      ["test", "tests", "__tests__", "spec"].includes(part)
+    )
+  ) {
+    return true;
+  }
+
+  return /\.(spec|test)\.[^.]+$/.test(filename);
+}
+
+function buildTestingLines(files: FileChange[]): string[] {
+  if (files.some(isTestFile)) {
+    return ["- [x] Unit tests"];
+  }
+
+  return [
+    "- [ ] Unit tests",
+    "- [ ] Manual testing",
+    "- Please describe manual testing.",
+  ];
+}
+
 function detectSignalFiles(files: FileChange[]): string[] {
   const signals = new Set<string>();
 
@@ -362,6 +393,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
   }
   const files = mergeChanges(stagedChanges, []);
   const changeBullets = buildChangeBullets(files);
+  const testingLines = buildTestingLines(files);
 
   const config = vscode.workspace.getConfiguration("prd");
   const maxDiffLines = Math.max(
@@ -390,6 +422,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
   const markdown = buildMarkdown({
     files,
     changeBullets,
+    testingLines,
     added,
     removed,
     truncated,
@@ -477,6 +510,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const workingChanges = parseNameStatus(filesOutputWorking);
   const files = mergeChanges(rangeChanges, workingChanges);
   const changeBullets = buildChangeBullets(files);
+  const testingLines = buildTestingLines(files);
   if (files.length === 0) {
     await vscode.window.showInformationMessage(
       `No changes against ${baseBranch}`
@@ -495,6 +529,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const markdown = buildMarkdown({
     files,
     changeBullets,
+    testingLines,
     added,
     removed,
     truncated,
