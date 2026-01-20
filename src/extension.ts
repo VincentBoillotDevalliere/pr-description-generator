@@ -336,6 +336,48 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function isGitNotAvailable(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  if (message.includes("command not found")) {
+    return true;
+  }
+  if (message.includes("not recognized as an internal")) {
+    return true;
+  }
+  if (message.includes("git: not found")) {
+    return true;
+  }
+  if (message.includes("git: command not found")) {
+    return true;
+  }
+  if (message.includes("no such file or directory")) {
+    return true;
+  }
+
+  const anyError = error as { code?: unknown };
+  if (anyError && (anyError.code === "ENOENT" || anyError.code === 127)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isNotGitRepository(error: unknown): boolean {
+  return getErrorMessage(error).toLowerCase().includes("not a git repository");
+}
+
+function getGitErrorMessage(error: unknown, fallback: string): string {
+  if (isGitNotAvailable(error)) {
+    return "Git not installed or not available in PATH.";
+  }
+  if (isNotGitRepository(error)) {
+    return "Not a git repository";
+  }
+
+  const detail = getErrorMessage(error);
+  return fallback ? `${fallback}: ${detail}` : detail;
+}
+
 async function openMarkdownDocument(content: string): Promise<void> {
   const uri = vscode.Uri.parse("untitled:PR_DESCRIPTION.md");
   const document = await vscode.workspace.openTextDocument(uri);
@@ -360,7 +402,7 @@ async function ensureGitRepo(workspaceRoot: string): Promise<void> {
   try {
     await execGit("git status --porcelain", workspaceRoot);
   } catch (error) {
-    throw new Error("Not a git repository");
+    throw new Error(getGitErrorMessage(error, ""));
   }
 }
 
@@ -373,6 +415,9 @@ async function resolveBaseBranch(
     await execGit(`git show-ref --verify ${shellEscape(ref)}`, workspaceRoot);
     return configuredBase;
   } catch (error) {
+    if (isGitNotAvailable(error)) {
+      throw new Error(getGitErrorMessage(error, ""));
+    }
     if (configuredBase === "main") {
       const fallbackRef = "refs/heads/master";
       try {
@@ -402,7 +447,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
   try {
     statusOutput = await execGit("git status --porcelain", workspaceRoot);
   } catch (error) {
-    await vscode.window.showErrorMessage("Not a git repository");
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
     return;
   }
 
@@ -429,7 +474,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
     diffOutput = await execGit("git diff --staged --no-color", workspaceRoot);
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `Failed to run git diff --staged: ${getErrorMessage(error)}`
+      getGitErrorMessage(error, "Failed to run git diff --staged")
     );
     return;
   }
@@ -483,7 +528,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   try {
     await ensureGitRepo(workspaceRoot);
   } catch (error) {
-    await vscode.window.showErrorMessage(getErrorMessage(error));
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
     return;
   }
 
@@ -491,7 +536,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   try {
     baseBranch = await resolveBaseBranch(workspaceRoot, configuredBase);
   } catch (error) {
-    await vscode.window.showErrorMessage(getErrorMessage(error));
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
     return;
   }
 
@@ -517,7 +562,10 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     );
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `Failed to run git diff against ${baseBranch}: ${getErrorMessage(error)}`
+      getGitErrorMessage(
+        error,
+        `Failed to run git diff against ${baseBranch}`
+      )
     );
     return;
   }
