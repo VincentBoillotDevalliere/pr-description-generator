@@ -336,6 +336,26 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+async function openMarkdownDocument(content: string): Promise<void> {
+  const uri = vscode.Uri.parse("untitled:PR_DESCRIPTION.md");
+  const document = await vscode.workspace.openTextDocument(uri);
+
+  if (document.languageId !== "markdown") {
+    await vscode.languages.setTextDocumentLanguage(document, "markdown");
+  }
+
+  const editor = await vscode.window.showTextDocument(document, {
+    preview: false,
+  });
+  const lastLine = document.lineCount - 1;
+  const lastCharacter = document.lineAt(lastLine).text.length;
+  const fullRange = new vscode.Range(0, 0, lastLine, lastCharacter);
+
+  await editor.edit((edit) => {
+    edit.replace(fullRange, content);
+  });
+}
+
 async function ensureGitRepo(workspaceRoot: string): Promise<void> {
   try {
     await execGit("git status --porcelain", workspaceRoot);
@@ -434,11 +454,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
     includeFilesSection,
   });
 
-  const document = await vscode.workspace.openTextDocument({
-    content: markdown,
-    language: "markdown",
-  });
-  await vscode.window.showTextDocument(document, { preview: false });
+  await openMarkdownDocument(markdown);
 
   if (copyToClipboard) {
     await vscode.env.clipboard.writeText(markdown);
@@ -541,11 +557,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     includeFilesSection,
   });
 
-  const document = await vscode.workspace.openTextDocument({
-    content: markdown,
-    language: "markdown",
-  });
-  await vscode.window.showTextDocument(document, { preview: false });
+  await openMarkdownDocument(markdown);
 
   if (copyToClipboard) {
     await vscode.env.clipboard.writeText(markdown);
