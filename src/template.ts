@@ -1,5 +1,12 @@
+export type FileStatus = "Added" | "Modified" | "Deleted" | "Renamed";
+
+export type FileChange = {
+  status: FileStatus;
+  path: string;
+};
+
 export type TemplateOptions = {
-  files: string[];
+  files: FileChange[];
   added: number;
   removed: number;
   truncated: boolean;
@@ -38,11 +45,11 @@ export function buildMarkdown(options: TemplateOptions): string {
 
   const changesLines =
     files.length > 0
-      ? files.map((file) => `- ${file}`)
+      ? files.map((file) => `- ${file.status}: ${file.path}`)
       : [`- ${emptyChangesLine}`];
 
   const filesLines =
-    files.length > 0 ? files.map((file) => `- ${file}`) : changesLines;
+    files.length > 0 ? files.map((file) => `- ${file.path}`) : changesLines;
 
   const output: string[] = [
     "## Summary",

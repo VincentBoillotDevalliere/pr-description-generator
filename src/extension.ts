@@ -1,10 +1,14 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
-import { buildMarkdown } from "./template";
+import { buildMarkdown, FileChange, FileStatus } from "./template";
 
 type DiffSummary = {
   added: number;
   removed: number;
+};
+
+type ParsedFileChange = FileChange & {
+  key: string;
 };
 
 function execGit(command: string, cwd: string): Promise<string> {
@@ -27,20 +31,134 @@ function shellEscape(value: string): string {
   return `"${String(value).replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
-function parseStagedFiles(statusOutput: string): string[] {
+function normalizePath(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function statusFromCode(code: string): FileStatus {
+  switch (code) {
+    case "A":
+      return "Added";
+    case "D":
+      return "Deleted";
+    case "R":
+      return "Renamed";
+    case "C":
+      return "Added";
+    default:
+      return "Modified";
+  }
+}
+
+function parseRenamePath(pathPart: string): { displayPath: string; key: string } {
+  if (!pathPart) {
+    return { displayPath: "", key: "" };
+  }
+
+  if (pathPart.includes("->")) {
+    const [oldPart, newPart] = pathPart.split("->");
+    const oldPath = normalizePath(oldPart || "");
+    const newPath = normalizePath(newPart || "");
+    const displayPath = `${oldPath} -> ${newPath}`.trim();
+    const key = newPath || oldPath || displayPath;
+    return { displayPath, key };
+  }
+
+  const normalized = normalizePath(pathPart);
+  return { displayPath: normalized, key: normalized };
+}
+
+function parsePorcelainStagedChanges(statusOutput: string): ParsedFileChange[] {
   if (!statusOutput) {
     return [];
   }
+
   return statusOutput
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
+      if (line.length < 3) {
+        return null;
+      }
       const indexStatus = line[0];
+      if (indexStatus === " " || indexStatus === "?") {
+        return null;
+      }
       const pathPart = line.slice(3).trim();
-      return { indexStatus, pathPart };
+      const status = statusFromCode(indexStatus);
+      if (status === "Renamed") {
+        const { displayPath, key } = parseRenamePath(pathPart);
+        if (!displayPath) {
+          return null;
+        }
+        return { status, path: displayPath, key };
+      }
+      const normalized = normalizePath(pathPart);
+      if (!normalized) {
+        return null;
+      }
+      return { status, path: normalized, key: normalized };
     })
-    .filter((entry) => entry.indexStatus !== " " && entry.indexStatus !== "?")
-    .map((entry) => entry.pathPart);
+    .filter((entry): entry is ParsedFileChange => Boolean(entry));
+}
+
+function parseNameStatus(output: string): ParsedFileChange[] {
+  if (!output) {
+    return [];
+  }
+
+  return output
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\t+/);
+      const statusField = parts[0] || "";
+      const statusCode = statusField[0] || "M";
+      const status = statusFromCode(statusCode);
+
+      if (status === "Renamed") {
+        const oldPath = normalizePath(parts[1] || "");
+        const newPath = normalizePath(parts[2] || "");
+        const displayPath = `${oldPath} -> ${newPath}`.trim();
+        const key = newPath || oldPath || displayPath;
+        if (!displayPath) {
+          return null;
+        }
+        return { status, path: displayPath, key };
+      }
+
+      const normalized = normalizePath(parts[1] || "");
+      if (!normalized) {
+        return null;
+      }
+      return { status, path: normalized, key: normalized };
+    })
+    .filter((entry): entry is ParsedFileChange => Boolean(entry));
+}
+
+function mergeChanges(
+  primary: ParsedFileChange[],
+  secondary: ParsedFileChange[]
+): FileChange[] {
+  const merged = new Map<string, FileChange>();
+
+  for (const change of primary) {
+    if (!merged.has(change.key)) {
+      merged.set(change.key, { status: change.status, path: change.path });
+    }
+  }
+
+  for (const change of secondary) {
+    if (!merged.has(change.key)) {
+      merged.set(change.key, { status: change.status, path: change.path });
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 function summarizeDiff(diffText: string): DiffSummary {
@@ -128,8 +246,8 @@ async function generateDescriptionFromStaged(): Promise<void> {
     return;
   }
 
-  const stagedFiles = parseStagedFiles(statusOutput);
-  if (stagedFiles.length === 0) {
+  const stagedChanges = parsePorcelainStagedChanges(statusOutput);
+  if (stagedChanges.length === 0) {
     await vscode.window.showInformationMessage("No staged changes");
     return;
   }
@@ -159,7 +277,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
   const { added, removed } = summarizeDiff(limitedDiff);
 
   const markdown = buildMarkdown({
-    files: stagedFiles,
+    files: mergeChanges(stagedChanges, []),
     added,
     removed,
     truncated,
@@ -228,12 +346,12 @@ async function generateDescriptionAgainstBase(): Promise<void> {
       workspaceRoot
     );
     filesOutputRange = await execGit(
-      `git diff --name-only ${shellEscape(range)}`,
+      `git diff --name-status ${shellEscape(range)}`,
       workspaceRoot
     );
     diffOutputWorking = await execGit("git diff HEAD --no-color", workspaceRoot);
     filesOutputWorking = await execGit(
-      "git diff --name-only HEAD",
+      "git diff --name-status HEAD",
       workspaceRoot
     );
   } catch (error) {
@@ -243,28 +361,9 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     return;
   }
 
-  const filesRange = filesOutputRange
-    ? filesOutputRange.split(/\r?\n/).filter(Boolean)
-    : [];
-  const filesWorking = filesOutputWorking
-    ? filesOutputWorking.split(/\r?\n/).filter(Boolean)
-    : [];
-  const files: string[] = [];
-  const seen = new Set<string>();
-
-  for (const file of filesRange) {
-    if (!seen.has(file)) {
-      seen.add(file);
-      files.push(file);
-    }
-  }
-
-  for (const file of filesWorking) {
-    if (!seen.has(file)) {
-      seen.add(file);
-      files.push(file);
-    }
-  }
+  const rangeChanges = parseNameStatus(filesOutputRange);
+  const workingChanges = parseNameStatus(filesOutputWorking);
+  const files = mergeChanges(rangeChanges, workingChanges);
   if (files.length === 0) {
     await vscode.window.showInformationMessage(
       `No changes against ${baseBranch}`
