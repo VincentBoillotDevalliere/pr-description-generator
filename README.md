@@ -17,6 +17,7 @@ Or generate against a base branch:
 - `prd.baseBranch`: Base branch to diff against (default: main).
 - `prd.maxDiffLines`: Maximum number of diff lines to analyze (default: 2000).
 - `prd.copyToClipboard`: Copy the generated Markdown to the clipboard (default: false).
+- `prd.includeFilesSection`: Include a `Files changed` section (default: false).
 
 ## Scripts
 

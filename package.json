@@ -58,6 +58,11 @@
           "type": "boolean",
           "default": false,
           "description": "Copy generated PR description to the clipboard."
+        },
+        "prd.includeFilesSection": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include a 'Files changed' section in the generated Markdown."
         }
       }
     }

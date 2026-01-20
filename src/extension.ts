@@ -1,21 +1,10 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
+import { buildMarkdown } from "./template";
 
 type DiffSummary = {
   added: number;
   removed: number;
-};
-
-type MarkdownOptions = {
-  files: string[];
-  added: number;
-  removed: number;
-  truncated: boolean;
-  maxLines: number;
-  analyzedLines: number;
-  summaryLabel: string;
-  diffLabel: string;
-  emptyChangesLine: string;
 };
 
 function execGit(command: string, cwd: string): Promise<string> {
@@ -80,50 +69,6 @@ function summarizeDiff(diffText: string): DiffSummary {
   });
 
   return { added, removed };
-}
-
-function buildMarkdown(options: MarkdownOptions): string {
-  const {
-    files,
-    added,
-    removed,
-    truncated,
-    maxLines,
-    analyzedLines,
-    summaryLabel,
-    diffLabel,
-    emptyChangesLine,
-  } = options;
-
-  const summaryLines = [
-    `${summaryLabel} in ${files.length} file${
-      files.length === 1 ? "" : "s"
-    }.`,
-    `Diff stats (${diffLabel}): +${added} / -${removed} lines.`,
-  ];
-
-  if (truncated) {
-    summaryLines.push(
-      `Diff analysis truncated to ${maxLines} lines (analyzed ${analyzedLines}).`
-    );
-  }
-
-  const changesLines =
-    files.length > 0
-      ? files.map((file) => `- ${file}`)
-      : [`- ${emptyChangesLine}`];
-
-  return [
-    "## Summary",
-    ...summaryLines.map((line) => `- ${line}`),
-    "",
-    "## Changes",
-    ...changesLines,
-    "",
-    "## Testing",
-    "- [ ] Not run (not specified).",
-    "",
-  ].join("\n");
 }
 
 function getErrorMessage(error: unknown): string {
@@ -195,6 +140,8 @@ async function generateDescriptionFromStaged(): Promise<void> {
     1
   );
   const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
+  const includeFilesSection =
+    config.get<boolean>("includeFilesSection", false) ?? false;
 
   let diffOutput: string;
   try {
@@ -221,6 +168,7 @@ async function generateDescriptionFromStaged(): Promise<void> {
     summaryLabel: "Staged changes",
     diffLabel: "staged",
     emptyChangesLine: "No staged files detected.",
+    includeFilesSection,
   });
 
   const document = await vscode.workspace.openTextDocument({
@@ -250,6 +198,8 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   );
   const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
   const configuredBase = config.get<string>("baseBranch", "main") ?? "main";
+  const includeFilesSection =
+    config.get<boolean>("includeFilesSection", false) ?? false;
 
   try {
     await ensureGitRepo(workspaceRoot);
@@ -340,6 +290,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     summaryLabel: `Changes against ${baseBranch}`,
     diffLabel: `against ${baseBranch}`,
     emptyChangesLine: `No changes detected against ${baseBranch}.`,
+    includeFilesSection,
   });
 
   const document = await vscode.workspace.openTextDocument({
