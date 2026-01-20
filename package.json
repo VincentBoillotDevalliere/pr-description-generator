@@ -1,0 +1,41 @@
+{
+  "name": "pr-description-generator",
+  "displayName": "PR Description Generator",
+  "description": "Generate a PR description from staged git changes.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:prd.generateDescriptionStaged"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "prd.generateDescriptionStaged",
+        "title": "PRD: Generate PR Description (staged)"
+      }
+    ],
+    "configuration": {
+      "title": "PR Description Generator",
+      "properties": {
+        "prd.maxDiffLines": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 1,
+          "description": "Maximum number of diff lines to analyze when generating PR description."
+        },
+        "prd.copyToClipboard": {
+          "type": "boolean",
+          "default": false,
+          "description": "Copy generated PR description to the clipboard."
+        }
+      }
+    }
+  }
+}
