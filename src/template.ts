@@ -43,6 +43,9 @@ export function buildMarkdown(options: TemplateOptions): string {
   const summaryLines = [
     `${summaryLabel} in ${files.length} file${files.length === 1 ? "" : "s"}.`,
     `Diff stats (${diffLabel}): +${added} / -${removed} lines.`,
+    `Risk: ${riskLevel}${
+      areasImpacted.length > 0 ? ` (${areasImpacted.join(", ")})` : ""
+    }.`,
   ];
 
   if (truncated) {
@@ -50,9 +53,6 @@ export function buildMarkdown(options: TemplateOptions): string {
       `Diff analysis truncated to ${maxLines} lines (analyzed ${analyzedLines}).`
     );
   }
-
-  const changesLines =
-    changeBullets.length > 0 ? changeBullets : [emptyChangesLine];
 
   const filesLines =
     files.length > 0
@@ -64,7 +64,9 @@ export function buildMarkdown(options: TemplateOptions): string {
     ...summaryLines.map((line) => `- ${line}`),
     "",
     "## Changes",
-    ...changesLines.map((line) => `- ${line}`),
+    ...(changeBullets.length > 0
+      ? changeBullets.map((line) => `- ${line}`)
+      : [`- ${emptyChangesLine}`]),
     "",
   ];
 
@@ -74,8 +76,6 @@ export function buildMarkdown(options: TemplateOptions): string {
       ...(filesLines.length > 0 ? filesLines : [`- ${emptyChangesLine}`]),
       ""
     );
-  } else if (filesLines.length > 0) {
-    output.push("Files changed:", ...filesLines, "");
   }
 
   output.push(

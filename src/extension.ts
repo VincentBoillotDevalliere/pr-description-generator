@@ -137,61 +137,205 @@ function buildRiskAssessment(files: FileChange[]): {
   return { level, areas: sortedAreas };
 }
 
-function detectSignalFiles(files: FileChange[]): string[] {
-  const signals = new Set<string>();
-
-  for (const file of files) {
-    const normalized = normalizeGroupingPath(file.path).toLowerCase();
-
-    if (normalized.endsWith("package.json")) {
-      signals.add("package.json");
-    }
-
-    if (
-      normalized.includes("migrations/") ||
-      normalized.includes("migration/") ||
-      normalized.endsWith(".sql")
-    ) {
-      signals.add("migrations");
-    }
-
-    if (
-      normalized.includes("config/") ||
-      normalized.includes("/config.") ||
-      normalized.endsWith(".env") ||
-      normalized.includes(".env.") ||
-      normalized.endsWith(".yml") ||
-      normalized.endsWith(".yaml")
-    ) {
-      signals.add("config");
-    }
-  }
-
-  return Array.from(signals).sort();
-}
-
 function buildChangeBullets(files: FileChange[]): string[] {
   if (files.length === 0) {
     return [];
   }
 
   const bullets: string[] = [];
-  const total = files.length;
-  bullets.push(`Updated ${total} file${total === 1 ? "" : "s"}.`);
+  const maxBullets = 6;
+
+  const pushBullet = (text: string | null): void => {
+    if (!text) {
+      return;
+    }
+    if (bullets.length < maxBullets) {
+      bullets.push(text);
+    }
+  };
+
+  const formatList = (items: string[], maxItems: number): string => {
+    if (items.length <= maxItems) {
+      return items.join(", ");
+    }
+    const remaining = items.length - maxItems;
+    return `${items.slice(0, maxItems).join(", ")}, and ${remaining} more`;
+  };
+
+  const statusCounts: Record<FileStatus, number> = {
+    Added: 0,
+    Modified: 0,
+    Deleted: 0,
+    Renamed: 0,
+  };
 
   const folderCounts = new Map<string, number>();
   let rootCount = 0;
 
+  let uiTouched = 0;
+  let apiTouched = 0;
+  let scriptsTouched = 0;
+  let docsTouched = 0;
+  let assetsTouched = 0;
+  let dataTouched = 0;
+  let translationsTouched = 0;
+  let testsTouched = 0;
+
+  let dependenciesTouched = false;
+  let configTouched = false;
+  let infraTouched = false;
+  let dbTouched = false;
+  let authTouched = false;
+
   for (const file of files) {
+    statusCounts[file.status] += 1;
+
     const folder = getTopLevelFolder(file.path);
     if (folder) {
       folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
     } else {
       rootCount += 1;
     }
+
+    const normalized = normalizeGroupingPath(file.path).toLowerCase();
+    const extension = normalized.includes(".")
+      ? normalized.slice(normalized.lastIndexOf(".") + 1)
+      : "";
+
+    if (
+      normalized.startsWith("scripts/") ||
+      normalized.includes("/scripts/")
+    ) {
+      scriptsTouched += 1;
+    }
+
+    if (
+      normalized.includes("/docs/") ||
+      (extension === "md" && !normalized.includes("readme"))
+    ) {
+      docsTouched += 1;
+    }
+
+    if (
+      normalized.includes("/assets/") ||
+      normalized.startsWith("assets/") ||
+      normalized.includes("/public/")
+    ) {
+      assetsTouched += 1;
+    }
+
+    if (
+      normalized.includes("/i18n/") ||
+      normalized.includes("/locales/") ||
+      normalized.includes("/l10n/")
+    ) {
+      translationsTouched += 1;
+    }
+
+    if (
+      ["csv", "tsv", "xlsx", "jsonl"].includes(extension)
+    ) {
+      dataTouched += 1;
+    }
+
+    if (
+      ["html", "css", "scss", "less", "sass", "tsx", "jsx", "vue", "svelte"].includes(
+        extension
+      ) ||
+      normalized.includes("/ui/") ||
+      normalized.includes("/components/") ||
+      normalized.includes("/views/") ||
+      normalized.includes("/pages/") ||
+      normalized.includes("/styles/")
+    ) {
+      uiTouched += 1;
+    }
+
+    if (
+      normalized.includes("/api/") ||
+      normalized.includes("/server/") ||
+      normalized.includes("/backend/") ||
+      normalized.includes("/controllers/") ||
+      normalized.includes("/routes/") ||
+      normalized.includes("/services/")
+    ) {
+      apiTouched += 1;
+    }
+
+    if (isTestFile(file)) {
+      testsTouched += 1;
+    }
+
+    if (
+      normalized.endsWith("package.json") ||
+      normalized.endsWith("package-lock.json") ||
+      normalized.endsWith("yarn.lock") ||
+      normalized.endsWith("pnpm-lock.yaml") ||
+      normalized.endsWith("bun.lockb")
+    ) {
+      dependenciesTouched = true;
+    }
+
+    if (
+      normalized.includes("/config/") ||
+      normalized.startsWith("config/") ||
+      normalized.includes(".env") ||
+      normalized.endsWith(".yml") ||
+      normalized.endsWith(".yaml") ||
+      normalized.endsWith("config.json")
+    ) {
+      configTouched = true;
+    }
+
+    if (
+      normalized.includes(".github/workflows") ||
+      normalized.includes("/ci/") ||
+      normalized.includes("dockerfile") ||
+      normalized.includes("/k8s/") ||
+      normalized.includes("/helm/") ||
+      normalized.includes("/terraform/")
+    ) {
+      infraTouched = true;
+    }
+
+    if (
+      normalized.includes("migrations/") ||
+      normalized.includes("migration/") ||
+      normalized.includes("prisma") ||
+      normalized.includes("flyway") ||
+      normalized.endsWith(".sql")
+    ) {
+      dbTouched = true;
+    }
+
+    if (
+      normalized.includes("auth") ||
+      normalized.includes("jwt") ||
+      normalized.includes("oauth") ||
+      normalized.includes("permission")
+    ) {
+      authTouched = true;
+    }
   }
 
-  if (folderCounts.size > 0) {
+  const statusParts: string[] = [];
+  if (statusCounts.Added > 0) {
+    statusParts.push(`${statusCounts.Added} added`);
+  }
+  if (statusCounts.Modified > 0) {
+    statusParts.push(`${statusCounts.Modified} modified`);
+  }
+  if (statusCounts.Deleted > 0) {
+    statusParts.push(`${statusCounts.Deleted} deleted`);
+  }
+  if (statusCounts.Renamed > 0) {
+    statusParts.push(`${statusCounts.Renamed} renamed`);
+  }
+  if (statusParts.length > 0) {
+    pushBullet(`File operations: ${statusParts.join(", ")}.`);
+  }
+
+  if (folderCounts.size > 0 || rootCount > 0) {
     const sorted = Array.from(folderCounts.entries()).sort((a, b) => {
       if (b[1] !== a[1]) {
         return b[1] - a[1];
@@ -199,26 +343,87 @@ function buildChangeBullets(files: FileChange[]): string[] {
       return a[0].localeCompare(b[0]);
     });
 
-    for (const [folder, count] of sorted) {
-      bullets.push(
-        `Changes in ${folder}/ (${count} file${count === 1 ? "" : "s"}).`
-      );
+    const top = sorted.slice(0, 3).map(([folder, count]) => ({
+      label: `${folder}/ (${count})`,
+      count,
+    }));
+
+    if (rootCount > 0 && top.length < 3) {
+      top.push({ label: `root files (${rootCount})`, count: rootCount });
     }
-  } else if (rootCount > 0) {
-    bullets.push(
-      `Changes in root files (${rootCount} file${
-        rootCount === 1 ? "" : "s"
-      }).`
-    );
-  } else {
-    bullets.push("Changes by folder: none detected.");
+
+    if (top.length > 0) {
+      pushBullet(`Primary areas: ${top.map((entry) => entry.label).join(", ")}.`);
+    }
   }
 
-  const signals = detectSignalFiles(files);
+  const signals: string[] = [];
+  if (dependenciesTouched) {
+    signals.push("dependencies");
+  }
+  if (configTouched) {
+    signals.push("config");
+  }
+  if (dbTouched) {
+    signals.push("database");
+  }
+  if (authTouched) {
+    signals.push("auth/security");
+  }
+  if (infraTouched) {
+    signals.push("infra");
+  }
   if (signals.length > 0) {
-    bullets.push(`Signal files touched: ${signals.join(", ")}.`);
-  } else {
-    bullets.push("Signal files touched: none detected.");
+    pushBullet(`Signals detected: ${signals.join(", ")}.`);
+  }
+
+  const focusAreas: string[] = [];
+  if (uiTouched > 0) {
+    focusAreas.push("UI");
+  }
+  if (apiTouched > 0) {
+    focusAreas.push("API/backend");
+  }
+  if (scriptsTouched > 0) {
+    focusAreas.push("scripts");
+  }
+  if (docsTouched > 0) {
+    focusAreas.push("docs");
+  }
+  if (assetsTouched > 0) {
+    focusAreas.push("assets");
+  }
+  if (dataTouched > 0) {
+    focusAreas.push("data files");
+  }
+  if (translationsTouched > 0) {
+    focusAreas.push("localization");
+  }
+  if (testsTouched > 0) {
+    focusAreas.push("tests");
+  }
+  if (focusAreas.length > 0) {
+    pushBullet(`Touches: ${formatList(focusAreas, 6)}.`);
+  }
+
+  if (testsTouched > 0) {
+    pushBullet(
+      `Tests updated: ${testsTouched} file${testsTouched === 1 ? "" : "s"}.`
+    );
+  }
+
+  if (translationsTouched > 0) {
+    pushBullet(
+      `Localization updates: ${translationsTouched} file${
+        translationsTouched === 1 ? "" : "s"
+      }.`
+    );
+  }
+
+  if (dataTouched > 0) {
+    pushBullet(
+      `Data files updated: ${dataTouched} file${dataTouched === 1 ? "" : "s"}.`
+    );
   }
 
   return bullets;
