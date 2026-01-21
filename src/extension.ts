@@ -1181,6 +1181,16 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     await openTextPreviewDocument(prompt, "PRD_AI_PROMPT.txt");
   }
 
+  const confirmSend = await vscode.window.showWarningMessage(
+    "Send the generated prompt (diff, files, and baseline description) to the AI provider?",
+    { modal: true },
+    "Send",
+    "Cancel"
+  );
+  if (confirmSend !== "Send") {
+    return;
+  }
+
   let aiMarkdown = baselineMarkdown;
   try {
     const provider = createProvider(providerId);
