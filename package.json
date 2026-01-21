@@ -10,8 +10,9 @@
   "bugs": {
     "url": "https://github.com/vincentdevalliere/pr-description-generator/issues"
   },
-  "version": "0.0.1",
-  "publisher": "local",
+  "icon": "assets/image.png",
+  "version": "0.0.2",
+  "publisher": "VincentDevalliere",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -27,6 +28,7 @@
   "activationEvents": [
     "onCommand:prd.generateDescriptionStaged",
     "onCommand:prd.generateDescriptionBase",
+    "onCommand:prd.generateDescriptionAi",
     "onCommand:prd.insertDescriptionHere"
   ],
   "main": "./out/extension.js",
@@ -39,6 +41,10 @@
       {
         "command": "prd.generateDescriptionBase",
         "title": "PRD: Generate PR Description (against base branch)"
+      },
+      {
+        "command": "prd.generateDescriptionAi",
+        "title": "PRD: Generate PR Description (AI enhanced)"
       },
       {
         "command": "prd.insertDescriptionHere",
@@ -68,6 +74,39 @@
           "type": "boolean",
           "default": false,
           "description": "Include a 'Files changed' section in the generated Markdown."
+        },
+        "prd.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key used for AI-enhanced PR descriptions."
+        },
+        "prd.ai.endpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1/chat/completions",
+          "description": "OpenAI-compatible endpoint for AI-enhanced descriptions."
+        },
+        "prd.ai.model": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "Model name used for AI-enhanced descriptions."
+        },
+        "prd.ai.timeoutMs": {
+          "type": "number",
+          "default": 12000,
+          "minimum": 1000,
+          "description": "Timeout for AI requests in milliseconds."
+        },
+        "prd.ai.maxDiffLines": {
+          "type": "number",
+          "default": 800,
+          "minimum": 1,
+          "description": "Maximum number of diff lines sent to the AI."
+        },
+        "prd.ai.maxDiffChars": {
+          "type": "number",
+          "default": 12000,
+          "minimum": 200,
+          "description": "Maximum number of diff characters sent to the AI."
         }
       }
     }

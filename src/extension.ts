@@ -1,5 +1,10 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
+import * as fs from "fs";
+import * as http from "http";
+import * as https from "https";
+import * as path from "path";
+import { URL } from "url";
 import { buildMarkdown, FileChange, FileStatus } from "./template";
 
 type DiffSummary = {
@@ -17,12 +22,34 @@ type PreparedDiff = {
   analyzedLines: number;
 };
 
+let extensionRoot: string | null = null;
+let promptTemplateCache: string | null = null;
+
 function formatList(items: string[], maxItems: number): string {
   if (items.length <= maxItems) {
     return items.join(", ");
   }
   const remaining = items.length - maxItems;
   return `${items.slice(0, maxItems).join(", ")}, and ${remaining} more`;
+}
+
+async function getPromptTemplate(): Promise<string> {
+  if (promptTemplateCache) {
+    return promptTemplateCache;
+  }
+  if (!extensionRoot) {
+    throw new Error("Extension root path not available.");
+  }
+
+  const promptPath = path.join(
+    extensionRoot,
+    "src",
+    "prompts",
+    "ai-prd-v1.txt"
+  );
+  const content = await fs.promises.readFile(promptPath, "utf8");
+  promptTemplateCache = content;
+  return content;
 }
 
 function extractCurrentPath(path: string): string {
@@ -36,15 +63,6 @@ function extractCurrentPath(path: string): string {
 function normalizeGroupingPath(path: string): string {
   const trimmed = extractCurrentPath(path).trim();
   return trimmed.replace(/^\.?\//, "");
-}
-
-function getTopLevelFolder(path: string): string | null {
-  const normalized = normalizeGroupingPath(path);
-  const parts = normalized.split("/");
-  if (parts.length <= 1) {
-    return null;
-  }
-  return parts[0];
 }
 
 function isTestFile(change: FileChange): boolean {
@@ -613,6 +631,171 @@ function prepareDiffForAnalysis(diffText: string, maxLines: number): PreparedDif
   };
 }
 
+type AiDiffPayload = {
+  text: string;
+  truncated: boolean;
+  analyzedLines: number;
+  truncatedByChars: boolean;
+};
+
+function prepareAiDiffPayload(
+  diffText: string,
+  maxLines: number,
+  maxChars: number
+): AiDiffPayload {
+  const prepared = prepareDiffForAnalysis(diffText, maxLines);
+  let text = prepared.text;
+  let truncatedByChars = false;
+
+  if (maxChars > 0 && text.length > maxChars) {
+    text = text.slice(0, maxChars);
+    truncatedByChars = true;
+  }
+
+  return {
+    text,
+    truncated: prepared.truncated || truncatedByChars,
+    analyzedLines: prepared.analyzedLines,
+    truncatedByChars,
+  };
+}
+
+function formatFileChanges(files: FileChange[]): string {
+  if (files.length === 0) {
+    return "none";
+  }
+  return files.map((file) => `${file.status}: ${file.path}`).join("\n");
+}
+
+function applyPromptTemplate(
+  template: string,
+  values: Record<string, string>
+): string {
+  return template.replace(/{{\s*([A-Z0-9_]+)\s*}}/g, (match, key) => {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      return values[key];
+    }
+    return match;
+  });
+}
+
+function stripMarkdownFences(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) {
+    return trimmed;
+  }
+  const lines = trimmed.split(/\r?\n/);
+  if (lines.length <= 2) {
+    return trimmed;
+  }
+  return lines.slice(1, -1).join("\n").trim();
+}
+
+function postJson(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  timeoutMs: number
+): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === "https:";
+    const client = isHttps ? https : http;
+
+    const options: http.RequestOptions = {
+      method: "POST",
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port ? Number(parsedUrl.port) : isHttps ? 443 : 80,
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      headers: {
+        ...headers,
+        "Content-Length": Buffer.byteLength(body).toString(),
+      },
+    };
+
+    const request = client.request(options, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      response.on("end", () => {
+        const responseBody = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          statusCode: response.statusCode ?? 0,
+          body: responseBody,
+        });
+      });
+    });
+
+    request.on("error", (error) => {
+      reject(error);
+    });
+
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error("Request timed out"));
+    });
+
+    request.write(body);
+    request.end();
+  });
+}
+
+async function requestAiMarkdown(
+  prompt: string,
+  apiKey: string,
+  endpoint: string,
+  model: string,
+  timeoutMs: number
+): Promise<string> {
+  const payload = JSON.stringify({
+    model,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a senior engineer writing concise, reviewer-friendly PR descriptions.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+  });
+
+  const response = await postJson(
+    endpoint,
+    {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    payload,
+    timeoutMs
+  );
+
+  let data: unknown;
+  try {
+    data = JSON.parse(response.body);
+  } catch (error) {
+    throw new Error("AI response was not valid JSON.");
+  }
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    const errorMessage =
+      (data as { error?: { message?: string } })?.error?.message ||
+      `AI request failed (${response.statusCode}).`;
+    throw new Error(errorMessage);
+  }
+
+  const content =
+    (data as { choices?: Array<{ message?: { content?: string }; text?: string }> })
+      ?.choices?.[0]?.message?.content ||
+    (data as { choices?: Array<{ text?: string }> })?.choices?.[0]?.text;
+
+  if (!content) {
+    throw new Error("AI response did not include any content.");
+  }
+
+  return stripMarkdownFences(content);
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -714,9 +897,24 @@ type MarkdownResult = {
   copyToClipboard: boolean;
 };
 
-async function buildStagedMarkdown(
+type StagedData = {
+  files: FileChange[];
+  changeBullets: string[];
+  releaseNotesLines: string[];
+  testingLines: string[];
+  risk: { level: "Low" | "Medium" | "High"; areas: string[] };
+  diffOutput: string;
+  preparedDiff: PreparedDiff;
+  added: number;
+  removed: number;
+  maxDiffLines: number;
+  includeFilesSection: boolean;
+  copyToClipboard: boolean;
+};
+
+async function collectStagedData(
   workspaceRoot: string
-): Promise<MarkdownResult | null> {
+): Promise<StagedData | null> {
   let statusOutput: string;
 
   try {
@@ -759,25 +957,53 @@ async function buildStagedMarkdown(
   const preparedDiff = prepareDiffForAnalysis(diffOutput, maxDiffLines);
   const { added, removed } = summarizeDiff(preparedDiff.text);
 
-  const markdown = buildMarkdown({
+  return {
     files,
     changeBullets,
     releaseNotesLines,
     testingLines,
-    riskLevel: risk.level,
-    areasImpacted: risk.areas,
+    risk,
+    diffOutput,
+    preparedDiff,
     added,
     removed,
-    truncated: preparedDiff.truncated,
-    maxLines: maxDiffLines,
-    analyzedLines: preparedDiff.analyzedLines,
+    maxDiffLines,
+    includeFilesSection,
+    copyToClipboard,
+  };
+}
+
+async function buildStagedMarkdown(
+  workspaceRoot: string
+): Promise<MarkdownResult | null> {
+  const data = await collectStagedData(workspaceRoot);
+  if (!data) {
+    return null;
+  }
+
+  const markdown = buildMarkdownFromStagedData(data);
+
+  return { markdown, copyToClipboard: data.copyToClipboard };
+}
+
+function buildMarkdownFromStagedData(data: StagedData): string {
+  return buildMarkdown({
+    files: data.files,
+    changeBullets: data.changeBullets,
+    releaseNotesLines: data.releaseNotesLines,
+    testingLines: data.testingLines,
+    riskLevel: data.risk.level,
+    areasImpacted: data.risk.areas,
+    added: data.added,
+    removed: data.removed,
+    truncated: data.preparedDiff.truncated,
+    maxLines: data.maxDiffLines,
+    analyzedLines: data.preparedDiff.analyzedLines,
     summaryLabel: "Staged changes",
     diffLabel: "staged",
     emptyChangesLine: "No staged files detected.",
-    includeFilesSection,
+    includeFilesSection: data.includeFilesSection,
   });
-
-  return { markdown, copyToClipboard };
 }
 
 async function ensureGitRepo(workspaceRoot: string): Promise<void> {
@@ -832,6 +1058,101 @@ async function generateDescriptionFromStaged(): Promise<void> {
 
   if (result.copyToClipboard) {
     await vscode.env.clipboard.writeText(result.markdown);
+    await vscode.window.showInformationMessage("Copied to clipboard");
+  }
+}
+
+async function generateDescriptionAiEnhanced(): Promise<void> {
+  const workspaceFolder = await getWorkspaceFolder();
+  if (!workspaceFolder) {
+    return;
+  }
+
+  const workspaceRoot = workspaceFolder.uri.fsPath;
+  const data = await collectStagedData(workspaceRoot);
+  if (!data) {
+    return;
+  }
+
+  const baselineMarkdown = buildMarkdownFromStagedData(data);
+  const aiConfig = vscode.workspace.getConfiguration("prd.ai");
+  const apiKey = (aiConfig.get<string>("apiKey", "") ?? "").trim();
+
+  if (!apiKey) {
+    await openMarkdownDocument(baselineMarkdown);
+    if (data.copyToClipboard) {
+      await vscode.env.clipboard.writeText(baselineMarkdown);
+      await vscode.window.showInformationMessage("Copied to clipboard");
+    }
+    return;
+  }
+
+  const endpoint =
+    (aiConfig.get<string>(
+      "endpoint",
+      "https://api.openai.com/v1/chat/completions"
+    ) ?? "https://api.openai.com/v1/chat/completions"
+    ).trim();
+  const model = (aiConfig.get<string>("model", "gpt-4o-mini") ??
+    "gpt-4o-mini").trim();
+  const timeoutMs = Math.max(
+    aiConfig.get<number>("timeoutMs", 12000) ?? 12000,
+    1000
+  );
+  const maxDiffLines = Math.max(
+    aiConfig.get<number>("maxDiffLines", 800) ?? 800,
+    1
+  );
+  const maxDiffChars = Math.max(
+    aiConfig.get<number>("maxDiffChars", 12000) ?? 12000,
+    200
+  );
+
+  let promptTemplate: string;
+  try {
+    promptTemplate = await getPromptTemplate();
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      `Failed to load AI prompt: ${getErrorMessage(error)}`
+    );
+    return;
+  }
+
+  const aiDiff = prepareAiDiffPayload(data.diffOutput, maxDiffLines, maxDiffChars);
+  const truncatedReason = aiDiff.truncated
+    ? aiDiff.truncatedByChars
+      ? "maxChars"
+      : "maxLines"
+    : "none";
+  const prompt = applyPromptTemplate(promptTemplate, {
+    BASELINE: baselineMarkdown,
+    FILES: formatFileChanges(data.files),
+    DIFF: aiDiff.text || "No diff content available.",
+    DIFF_TRUNCATED: aiDiff.truncated ? "yes" : "no",
+    DIFF_LINES: String(aiDiff.analyzedLines),
+    DIFF_TRUNCATED_REASON: truncatedReason,
+  });
+
+  let aiMarkdown = baselineMarkdown;
+  try {
+    aiMarkdown = await requestAiMarkdown(
+      prompt,
+      apiKey,
+      endpoint,
+      model,
+      timeoutMs
+    );
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      `AI enhancement failed: ${getErrorMessage(error)}`
+    );
+    aiMarkdown = baselineMarkdown;
+  }
+
+  await openMarkdownDocument(aiMarkdown);
+
+  if (data.copyToClipboard) {
+    await vscode.env.clipboard.writeText(aiMarkdown);
     await vscode.window.showInformationMessage("Copied to clipboard");
   }
 }
@@ -977,6 +1298,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionRoot = context.extensionPath;
   const stagedDisposable = vscode.commands.registerCommand(
     "prd.generateDescriptionStaged",
     generateDescriptionFromStaged
@@ -985,11 +1307,20 @@ export function activate(context: vscode.ExtensionContext): void {
     "prd.generateDescriptionBase",
     generateDescriptionAgainstBase
   );
+  const aiDisposable = vscode.commands.registerCommand(
+    "prd.generateDescriptionAi",
+    generateDescriptionAiEnhanced
+  );
   const insertDisposable = vscode.commands.registerCommand(
     "prd.insertDescriptionHere",
     insertDescriptionHere
   );
-  context.subscriptions.push(stagedDisposable, baseDisposable, insertDisposable);
+  context.subscriptions.push(
+    stagedDisposable,
+    baseDisposable,
+    aiDisposable,
+    insertDisposable
+  );
 }
 
 export function deactivate(): void {}

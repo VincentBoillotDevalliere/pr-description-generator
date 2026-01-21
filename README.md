@@ -12,6 +12,7 @@ Instead of manually summarizing commits or diffs, this extension analyzes your c
 
 - ✅ Generate PR descriptions from **staged changes**
 - ✅ Generate PR descriptions **against a base branch**
+- ✅ AI-enhanced descriptions (opt-in)
 - ✅ Insert the description directly into the active editor
 - ✅ Optional clipboard copy
 - ✅ Output is clean, structured Markdown
@@ -36,6 +37,14 @@ Analyzes currently staged files (`git add`) and generates a PR description.
 PRD: Generate PR Description (against base branch)
 ```
 Diffs the current branch against a configured base branch (default: `main`).
+
+---
+
+### Generate AI-enhanced description (optional)
+```
+PRD: Generate PR Description (AI enhanced)
+```
+Uses an AI model to enrich the local description. Falls back to the local output if no API key is configured.
 
 ---
 
@@ -83,6 +92,60 @@ Include a **Files changed** section in the generated description.
 
 ```json
 "prd.includeFilesSection": true
+```
+
+---
+
+### `prd.ai.apiKey` (default: `""`)
+API key used for AI enhancements.
+
+```json
+"prd.ai.apiKey": "YOUR_API_KEY"
+```
+
+---
+
+### `prd.ai.endpoint` (default: `https://api.openai.com/v1/chat/completions`)
+OpenAI-compatible endpoint for AI requests.
+
+```json
+"prd.ai.endpoint": "https://api.openai.com/v1/chat/completions"
+```
+
+---
+
+### `prd.ai.model` (default: `"gpt-4o-mini"`)
+Model name used for AI requests.
+
+```json
+"prd.ai.model": "gpt-4o-mini"
+```
+
+---
+
+### `prd.ai.timeoutMs` (default: `12000`)
+Timeout for AI requests in milliseconds.
+
+```json
+"prd.ai.timeoutMs": 12000
+```
+
+---
+
+### `prd.ai.maxDiffLines` (default: `800`)
+Maximum number of diff lines sent to the AI.
+
+```json
+"prd.ai.maxDiffLines": 800
+```
+
+---
+
+### `prd.ai.maxDiffChars` (default: `12000`)
+Maximum number of diff characters sent to the AI.
+
+```json
+"prd.ai.maxDiffChars": 12000
 ```
 
 ---
