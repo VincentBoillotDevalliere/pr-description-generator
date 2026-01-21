@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
-import * as fs from "fs";
 import * as path from "path";
+import * as fs from "fs";
 import { buildMarkdown, FileChange, FileStatus } from "./template";
 import { AIInput, createProvider } from "./ai/providers";
 
@@ -765,7 +765,7 @@ async function openMarkdownDocument(content: string): Promise<void> {
   const lastCharacter = document.lineAt(lastLine).text.length;
   const fullRange = new vscode.Range(0, 0, lastLine, lastCharacter);
 
-  await editor.edit((edit) => {
+  await editor.edit((edit: vscode.TextEditorEdit) => {
     edit.replace(fullRange, content);
   });
 }
@@ -788,7 +788,7 @@ async function openTextPreviewDocument(
   const lastCharacter = document.lineAt(lastLine).text.length;
   const fullRange = new vscode.Range(0, 0, lastLine, lastCharacter);
 
-  await editor.edit((edit) => {
+  await editor.edit((edit: vscode.TextEditorEdit) => {
     edit.replace(fullRange, content);
   });
 }
@@ -809,7 +809,7 @@ async function getWorkspaceFolder(): Promise<vscode.WorkspaceFolder | null> {
     return folders[0];
   }
 
-  const picks: WorkspacePick[] = folders.map((folder) => ({
+  const picks: WorkspacePick[] = folders.map((folder: any) => ({
     label: folder.name,
     description: folder.uri.fsPath,
     folder,
@@ -825,7 +825,7 @@ type MarkdownResult = {
   copyToClipboard: boolean;
 };
 
-type StagedData = {
+type MarkdownData = {
   files: FileChange[];
   changeBullets: string[];
   releaseNotesLines: string[];
@@ -838,11 +838,14 @@ type StagedData = {
   maxDiffLines: number;
   includeFilesSection: boolean;
   copyToClipboard: boolean;
+  summaryLabel: string;
+  diffLabel: string;
+  emptyChangesLine: string;
 };
 
 async function collectStagedData(
   workspaceRoot: string
-): Promise<StagedData | null> {
+): Promise<MarkdownData | null> {
   let statusOutput: string;
 
   try {
@@ -898,6 +901,107 @@ async function collectStagedData(
     maxDiffLines,
     includeFilesSection,
     copyToClipboard,
+    summaryLabel: "Staged changes",
+    diffLabel: "staged",
+    emptyChangesLine: "No staged files detected.",
+  };
+}
+
+async function collectBaseData(
+  workspaceRoot: string
+): Promise<MarkdownData | null> {
+  const config = vscode.workspace.getConfiguration("prd");
+  const maxDiffLines = Math.max(
+    config.get<number>("maxDiffLines", 2000) ?? 2000,
+    1
+  );
+  const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
+  const configuredBase = config.get<string>("baseBranch", "main") ?? "main";
+  const includeFilesSection =
+    config.get<boolean>("includeFilesSection", false) ?? false;
+
+  try {
+    await ensureGitRepo(workspaceRoot);
+  } catch (error) {
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
+    return null;
+  }
+
+  let baseBranch: string;
+  try {
+    baseBranch = await resolveBaseBranch(workspaceRoot, configuredBase);
+  } catch (error) {
+    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
+    return null;
+  }
+
+  const range = `${baseBranch}...HEAD`;
+  let diffOutputRange: string;
+  let filesOutputRange: string;
+  let diffOutputWorking = "";
+  let filesOutputWorking = "";
+
+  try {
+    diffOutputRange = await execGit(
+      `git diff ${shellEscape(range)} --no-color`,
+      workspaceRoot
+    );
+    filesOutputRange = await execGit(
+      `git diff --name-status ${shellEscape(range)}`,
+      workspaceRoot
+    );
+    diffOutputWorking = await execGit("git diff HEAD --no-color", workspaceRoot);
+    filesOutputWorking = await execGit(
+      "git diff --name-status HEAD",
+      workspaceRoot
+    );
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      getGitErrorMessage(
+        error,
+        `Failed to run git diff against ${baseBranch}`
+      )
+    );
+    return null;
+  }
+
+  const rangeChanges = parseNameStatus(filesOutputRange);
+  const workingChanges = parseNameStatus(filesOutputWorking);
+  const files = mergeChanges(rangeChanges, workingChanges);
+  if (files.length === 0) {
+    await vscode.window.showInformationMessage(
+      `No changes against ${baseBranch}`
+    );
+    return null;
+  }
+
+  const changeBullets = buildChangeBullets(files);
+  const releaseNotesLines = buildReleaseNotesLines(files);
+  const testingLines = buildTestingLines(files);
+  const risk = buildRiskAssessment(files);
+
+  const combinedDiff = [diffOutputRange, diffOutputWorking]
+    .filter(Boolean)
+    .join("\n");
+  const preparedDiff = prepareDiffForAnalysis(combinedDiff, maxDiffLines);
+  const { added, removed } = summarizeDiff(preparedDiff.text);
+
+  return {
+    files,
+    changeBullets,
+    releaseNotesLines,
+    testingLines,
+    risk,
+    diffOutput: combinedDiff,
+    preparedDiff,
+    added,
+    removed,
+    maxDiffLines,
+    includeFilesSection,
+    copyToClipboard,
+    summaryLabel: `Changes against ${baseBranch}`,
+    diffLabel: `against ${baseBranch}`,
+    emptyChangesLine: `No changes detected against ${baseBranch}.`,
   };
 }
 
@@ -909,12 +1013,12 @@ async function buildStagedMarkdown(
     return null;
   }
 
-  const markdown = buildMarkdownFromStagedData(data);
+  const markdown = buildMarkdownFromData(data);
 
   return { markdown, copyToClipboard: data.copyToClipboard };
 }
 
-function buildMarkdownFromStagedData(data: StagedData): string {
+function buildMarkdownFromData(data: MarkdownData): string {
   return buildMarkdown({
     files: data.files,
     changeBullets: data.changeBullets,
@@ -927,9 +1031,9 @@ function buildMarkdownFromStagedData(data: StagedData): string {
     truncated: data.preparedDiff.truncated,
     maxLines: data.maxDiffLines,
     analyzedLines: data.preparedDiff.analyzedLines,
-    summaryLabel: "Staged changes",
-    diffLabel: "staged",
-    emptyChangesLine: "No staged files detected.",
+    summaryLabel: data.summaryLabel,
+    diffLabel: data.diffLabel,
+    emptyChangesLine: data.emptyChangesLine,
     includeFilesSection: data.includeFilesSection,
   });
 }
@@ -997,12 +1101,12 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
   }
 
   const workspaceRoot = workspaceFolder.uri.fsPath;
-  const data = await collectStagedData(workspaceRoot);
+  const data = await collectBaseData(workspaceRoot);
   if (!data) {
     return;
   }
 
-  const baselineMarkdown = buildMarkdownFromStagedData(data);
+  const baselineMarkdown = buildMarkdownFromData(data);
   const aiConfig = vscode.workspace.getConfiguration("prd.ai");
   const apiKey = (aiConfig.get<string>("apiKey", "") ?? "").trim();
 
@@ -1122,7 +1226,7 @@ async function insertDescriptionHere(): Promise<void> {
   }
 
   const selection = editor.selection;
-  await editor.edit((edit) => {
+  await editor.edit((edit: vscode.TextEditorEdit) => {
     if (selection && !selection.isEmpty) {
       edit.replace(selection, result.markdown);
     } else {
@@ -1142,102 +1246,16 @@ async function generateDescriptionAgainstBase(): Promise<void> {
     return;
   }
   const workspaceRoot = workspaceFolder.uri.fsPath;
-  const config = vscode.workspace.getConfiguration("prd");
-  const maxDiffLines = Math.max(
-    config.get<number>("maxDiffLines", 2000) ?? 2000,
-    1
-  );
-  const copyToClipboard = config.get<boolean>("copyToClipboard", false) ?? false;
-  const configuredBase = config.get<string>("baseBranch", "main") ?? "main";
-  const includeFilesSection =
-    config.get<boolean>("includeFilesSection", false) ?? false;
-
-  try {
-    await ensureGitRepo(workspaceRoot);
-  } catch (error) {
-    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
+  const data = await collectBaseData(workspaceRoot);
+  if (!data) {
     return;
   }
 
-  let baseBranch;
-  try {
-    baseBranch = await resolveBaseBranch(workspaceRoot, configuredBase);
-  } catch (error) {
-    await vscode.window.showErrorMessage(getGitErrorMessage(error, ""));
-    return;
-  }
-
-  const range = `${baseBranch}...HEAD`;
-  let diffOutputRange: string;
-  let filesOutputRange: string;
-  let diffOutputWorking = "";
-  let filesOutputWorking = "";
-
-  try {
-    diffOutputRange = await execGit(
-      `git diff ${shellEscape(range)} --no-color`,
-      workspaceRoot
-    );
-    filesOutputRange = await execGit(
-      `git diff --name-status ${shellEscape(range)}`,
-      workspaceRoot
-    );
-    diffOutputWorking = await execGit("git diff HEAD --no-color", workspaceRoot);
-    filesOutputWorking = await execGit(
-      "git diff --name-status HEAD",
-      workspaceRoot
-    );
-  } catch (error) {
-    await vscode.window.showErrorMessage(
-      getGitErrorMessage(
-        error,
-        `Failed to run git diff against ${baseBranch}`
-      )
-    );
-    return;
-  }
-
-  const rangeChanges = parseNameStatus(filesOutputRange);
-  const workingChanges = parseNameStatus(filesOutputWorking);
-  const files = mergeChanges(rangeChanges, workingChanges);
-  const changeBullets = buildChangeBullets(files);
-  const releaseNotesLines = buildReleaseNotesLines(files);
-  const testingLines = buildTestingLines(files);
-  const risk = buildRiskAssessment(files);
-  if (files.length === 0) {
-    await vscode.window.showInformationMessage(
-      `No changes against ${baseBranch}`
-    );
-    return;
-  }
-
-  const combinedDiff = [diffOutputRange, diffOutputWorking]
-    .filter(Boolean)
-    .join("\n");
-  const preparedDiff = prepareDiffForAnalysis(combinedDiff, maxDiffLines);
-  const { added, removed } = summarizeDiff(preparedDiff.text);
-
-  const markdown = buildMarkdown({
-    files,
-    changeBullets,
-    releaseNotesLines,
-    testingLines,
-    riskLevel: risk.level,
-    areasImpacted: risk.areas,
-    added,
-    removed,
-    truncated: preparedDiff.truncated,
-    maxLines: maxDiffLines,
-    analyzedLines: preparedDiff.analyzedLines,
-    summaryLabel: `Changes against ${baseBranch}`,
-    diffLabel: `against ${baseBranch}`,
-    emptyChangesLine: `No changes detected against ${baseBranch}.`,
-    includeFilesSection,
-  });
+  const markdown = buildMarkdownFromData(data);
 
   await openMarkdownDocument(markdown);
 
-  if (copyToClipboard) {
+  if (data.copyToClipboard) {
     await vscode.env.clipboard.writeText(markdown);
     await vscode.window.showInformationMessage("Copied to clipboard");
   }

@@ -83,7 +83,9 @@
         "prd.ai.provider": {
           "type": "string",
           "default": "openai",
-          "enum": ["openai"],
+          "enum": [
+            "openai"
+          ],
           "description": "AI provider to use (OpenAI-compatible for now)."
         },
         "prd.ai.endpoint": {
@@ -117,7 +119,11 @@
         "prd.ai.tone": {
           "type": "string",
           "default": "standard",
-          "enum": ["concise", "standard", "detailed"],
+          "enum": [
+            "concise",
+            "standard",
+            "detailed"
+          ],
           "description": "Tone for AI-enhanced descriptions."
         },
         "prd.ai.previewPrompt": {
@@ -127,5 +133,10 @@
         }
       }
     }
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
   }
 }

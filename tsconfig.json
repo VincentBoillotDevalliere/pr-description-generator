@@ -8,6 +8,7 @@
     "sourceMap": true,
     "strict": true,
     "moduleResolution": "node",
+    "types": ["node", "vscode"],
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
