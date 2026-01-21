@@ -1,34 +1,51 @@
-# PR Description Generator
+# 🚀 PR Description Generator (AI-Powered)
 
-<img src="https://raw.githubusercontent.com/VincentBoillotDevalliere/pr-description-generator/main/assets/image.png" alt="Array Size Extension Logo" width="128" height="128">
+<img src="https://raw.githubusercontent.com/VincentBoillotDevalliere/pr-description-generator/main/assets/image.png" alt="PR Description Generator Logo" width="128" height="128">
 
-A VS Code extension that generates **clear, structured pull request descriptions** directly from your Git changes.
+### Write **better PR descriptions in seconds** — powered by Git analysis **and AI**
 
-Instead of manually summarizing commits or diffs, this extension analyzes your changes and produces a clean, ready-to-use **Markdown PR description** — saving time and improving consistency across your team.
+Stop wasting time explaining your changes.  
+This VS Code extension turns your Git diffs into **clear, structured, reviewer-friendly pull request descriptions** — instantly.
+
+Use it locally, or **supercharge it with AI** for next-level summaries, explanations, and polish — *without leaking secrets*.
 
 ---
 
-## Features
+## ✨ Why you’ll love it
+
+- 🧠 **AI-enhanced PR descriptions** (optional, safe, and configurable)
+- ⚡ Generate PRs directly from **staged changes** or **base branch diffs**
+- ✍️ Insert the result straight into your editor
+- 🔒 Built-in **secret redaction** before any AI call
+- 📋 Clean, ready-to-paste **Markdown output**
+- 🛠 Designed for fast, repeatable, professional PR workflows
+
+This is the tool you wish GitHub had built.
+
+---
+
+## 🧩 Features
 
 - ✅ Generate PR descriptions from **staged changes**
 - ✅ Generate PR descriptions **against a base branch**
-- ✅ AI-enhanced descriptions (opt-in, with redaction)
-- ✅ Insert the description directly into the active editor
-- ✅ Optional clipboard copy
-- ✅ Output is clean, structured Markdown
-- ✅ Designed for fast, repeatable PR workflows
+- 🤖 **AI-powered enhancement** (opt-in)
+- 🔐 Automatic redaction of secrets before AI requests
+- 🧾 Preview the exact AI prompt before sending
+- ✏️ Insert directly into the active editor
+- 📎 Optional clipboard copy
+- 🧼 Clean, structured Markdown output
+- 🔁 Graceful fallback to local generation if AI is unavailable
 
 ---
 
-## Commands
+## 🎮 Commands
 
-Open the **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run one of the following:
+Open the **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`):
 
 ### Generate from staged changes
 ```
 PRD: Generate PR Description (staged)
 ```
-Analyzes currently staged files (`git add`) and generates a PR description.
 
 ---
 
@@ -36,227 +53,54 @@ Analyzes currently staged files (`git add`) and generates a PR description.
 ```
 PRD: Generate PR Description (against base branch)
 ```
-Diffs the current branch against a configured base branch (default: `main`).
 
 ---
 
-### Generate AI-enhanced description (optional)
+### 🤖 Generate AI-enhanced description
 ```
 PRD: Generate PR Description (AI enhanced)
 ```
-Uses an AI model to enrich the local description. Falls back to the local output if no API key is configured.
 
 ---
 
-### Insert into the current editor
+### Insert at cursor
 ```
 PRD: Insert PR Description Here
 ```
-Inserts the generated PR description at the current cursor position — perfect for GitHub/GitLab PR templates.
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-All settings are optional and can be configured in `settings.json`.
-
-### `prd.baseBranch` (default: `"main"`)
-Base branch used when generating a diff against a branch.
+### Base
 
 ```json
-"prd.baseBranch": "main"
-```
-
----
-
-### `prd.maxDiffLines` (default: `2000`)
-Maximum number of diff lines analyzed to avoid excessive processing.
-
-```json
-"prd.maxDiffLines": 2000
-```
-
----
-
-### `prd.copyToClipboard` (default: `false`)
-Automatically copy the generated Markdown to the clipboard.
-
-```json
-"prd.copyToClipboard": true
-```
-
----
-
-### `prd.includeFilesSection` (default: `false`)
-Include a **Files changed** section in the generated description.
-
-```json
+"prd.baseBranch": "main",
+"prd.maxDiffLines": 2000,
+"prd.copyToClipboard": true,
 "prd.includeFilesSection": true
 ```
 
 ---
 
-### `prd.ai.apiKey` (default: `""`)
-API key used for AI enhancements.
+## 🤖 AI Configuration
 
 ```json
-"prd.ai.apiKey": "YOUR_API_KEY"
-```
-
----
-
-### `prd.ai.provider` (default: `"openai"`)
-AI provider to use (OpenAI-compatible for now).
-
-```json
-"prd.ai.provider": "openai"
-```
-
----
-
-### `prd.ai.endpoint` (default: `https://api.openai.com/v1/chat/completions`)
-OpenAI-compatible endpoint for AI requests.
-
-```json
-"prd.ai.endpoint": "https://api.openai.com/v1/chat/completions"
-```
-
----
-
-### `prd.ai.model` (default: `"gpt-4o-mini"`)
-Model name used for AI requests.
-
-```json
-"prd.ai.model": "gpt-4o-mini"
-```
-
----
-
-### `prd.ai.timeoutMs` (default: `12000`)
-Timeout for AI requests in milliseconds.
-
-```json
+"prd.ai.apiKey": "YOUR_API_KEY",
+"prd.ai.provider": "openai",
+"prd.ai.endpoint": "https://api.openai.com/v1/chat/completions",
+"prd.ai.model": "gpt-4o-mini",
 "prd.ai.timeoutMs": 12000
 ```
 
 ---
 
-### `prd.ai.maxDiffLines` (default: `800`)
-Maximum number of diff lines sent to the AI.
+## 🔒 Privacy & Safety
 
-```json
-"prd.ai.maxDiffLines": 800
-```
+AI is **100% opt-in** and protected by automatic redaction.
 
 ---
 
-### `prd.ai.maxDiffChars` (default: `12000`)
-Maximum number of diff characters sent to the AI.
+## 📄 License
 
-```json
-"prd.ai.maxDiffChars": 12000
-```
-
----
-
-### `prd.ai.tone` (default: `"standard"`)
-Tone for AI-enhanced descriptions (`concise`, `standard`, `detailed`).
-
-```json
-"prd.ai.tone": "standard"
-```
-
----
-
-### `prd.ai.previewPrompt` (default: `true`)
-Preview the exact AI prompt in a new tab before the request.
-
-```json
-"prd.ai.previewPrompt": true
-```
-
----
-
-### `prd.ai.redactSensitive` (default: `true`)
-Redact common secrets (tokens, passwords, keys) before sending to AI.
-
-```json
-"prd.ai.redactSensitive": true
-```
-
----
-
-### `prd.ai.redactPatterns` (default: `[]`)
-Custom regex patterns to redact before sending to AI.
-
-```json
-"prd.ai.redactPatterns": [
-  "password\\s*=\\s*[^\\s]+",
-  "/secret\\s*=.*/i"
-]
-```
-
----
-
-## Output format
-
-The generated PR description is structured Markdown, typically including:
-
-- Summary of changes
-- Key modifications
-- Optional list of changed files
-
-Designed to be pasted directly into:
-- GitHub PRs
-- GitLab MRs
-- Bitbucket PRs
-
----
-
-## Development
-
-### Available scripts
-
-- `npm run compile`  
-  Compile TypeScript into `out/`.
-
-- `npm run watch`  
-  Rebuild automatically on file changes during development.
-
-- `npm run build`  
-  Package the extension into a `.vsix` file using `vsce`.
-
-- `npm run run`  
-  Launch a development instance of VS Code with the extension loaded.
-
----
-
-## Why this extension?
-
-PR descriptions are often:
-- rushed
-- inconsistent
-- incomplete
-
-This extension gives you:
-- faster PR creation
-- better communication
-- cleaner reviews
-
-It’s a small tool — but it compounds into better engineering habits.
-
-
-
-## Feedback & Contributions
-
-- [Report an Issue](https://github.com/VincentBoillotDevalliere/pr-description-generator/issues)
-- [Request a Feature](https://github.com/VincentBoillotDevalliere/pr-description-generator/issues)
-- [Contribute](https://github.com/VincentBoillotDevalliere/pr-description-generator)
-
-## Buy Me a Coffee
-If you appreciate the extension and would like to support its development, feel free to [buy me a coffee](https://buymeacoffee.com/vincentboillotdevalliere)! Your support helps keep the project alive and improving. ☕💖
-
-
-## License
-
-This extension is licensed under the [MIT License](LICENSE).
+MIT
