@@ -1,4 +1,5 @@
 # PR Description Generator
+
 <img src="https://raw.githubusercontent.com/VincentBoillotDevalliere/pr-description-generator/main/assets/image.png" alt="Array Size Extension Logo" width="128" height="128">
 
 A VS Code extension that generates **clear, structured pull request descriptions** directly from your Git changes.
