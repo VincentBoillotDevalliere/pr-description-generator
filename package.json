@@ -6,12 +6,13 @@
     "type": "git",
     "url": "https://github.com/vincentdevalliere/pr-description-generator.git"
   },
+  "preview": false,
   "homepage": "https://github.com/vincentdevalliere/pr-description-generator/blob/main/README.md",
   "bugs": {
     "url": "https://github.com/vincentdevalliere/pr-description-generator/issues"
   },
   "icon": "assets/image.png",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "publisher": "VincentDevalliere",
   "engines": {
     "vscode": "^1.80.0"
