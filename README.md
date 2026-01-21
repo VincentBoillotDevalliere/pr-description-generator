@@ -12,7 +12,7 @@ Instead of manually summarizing commits or diffs, this extension analyzes your c
 
 - ✅ Generate PR descriptions from **staged changes**
 - ✅ Generate PR descriptions **against a base branch**
-- ✅ AI-enhanced descriptions (opt-in)
+- ✅ AI-enhanced descriptions (opt-in, with redaction)
 - ✅ Insert the description directly into the active editor
 - ✅ Optional clipboard copy
 - ✅ Output is clean, structured Markdown
@@ -173,6 +173,15 @@ Preview the exact AI prompt in a new tab before the request.
 
 ```json
 "prd.ai.previewPrompt": true
+```
+
+---
+
+### `prd.ai.redactSensitive` (default: `true`)
+Redact common secrets (tokens, passwords, keys) before sending to AI.
+
+```json
+"prd.ai.redactSensitive": true
 ```
 
 ---

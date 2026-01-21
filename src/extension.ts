@@ -700,6 +700,75 @@ function applyPromptTemplate(
   });
 }
 
+type RedactionResult = {
+  text: string;
+  count: number;
+};
+
+function redactSensitiveContent(input: string): RedactionResult {
+  let text = input;
+  let count = 0;
+
+  const apply = (
+    regex: RegExp,
+    replacer: string | ((...args: string[]) => string)
+  ): void => {
+    text = text.replace(regex, (...args) => {
+      count += 1;
+      if (typeof replacer === "string") {
+        return replacer;
+      }
+      return replacer(...(args as string[]));
+    });
+  };
+
+  apply(
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    (match) => {
+      const begin =
+        match.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----/)?.[0] ||
+        "-----BEGIN PRIVATE KEY-----";
+      const end =
+        match.match(/-----END [A-Z ]*PRIVATE KEY-----/)?.[0] ||
+        "-----END PRIVATE KEY-----";
+      return `${begin}\n[REDACTED]\n${end}`;
+    }
+  );
+
+  apply(/\b(Authorization\s*:\s*Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
+  apply(/\b(x-api-key\s*:\s*)[^\s]+/gi, "$1[REDACTED]");
+
+  apply(
+    /(\b(?:api[_-]?key|token|secret|password|passwd|pwd|access[_-]?key|client_secret|private_key)\b\s*[:=]\s*)(["']?)([^"'\s]+)\2/gi,
+    "$1$2[REDACTED]$2"
+  );
+
+  apply(
+    /("?(?:api[_-]?key|token|secret|password|passwd|pwd|access[_-]?key|client_secret|private_key)"?\s*:\s*)(["'])([^"']+)\2/gi,
+    "$1$2[REDACTED]$2"
+  );
+
+  apply(
+    /(\bAWS_(?:ACCESS|SECRET|SESSION)_?KEY(?:_ID)?\b\s*[:=]\s*)(["']?)[^"'\s]+\2/gi,
+    "$1$2[REDACTED]$2"
+  );
+
+  apply(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]");
+  apply(/\bASIA[0-9A-Z]{16}\b/g, "[REDACTED]");
+  apply(/\bghp_[A-Za-z0-9]{36}\b/g, "[REDACTED]");
+  apply(/\bgho_[A-Za-z0-9]{36}\b/g, "[REDACTED]");
+  apply(/\bghs_[A-Za-z0-9]{36}\b/g, "[REDACTED]");
+  apply(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "[REDACTED]");
+  apply(/\bglpat-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED]");
+  apply(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, "[REDACTED]");
+  apply(/\bsk_(?:live|test)_[A-Za-z0-9]{20,}\b/g, "[REDACTED]");
+  apply(/\bAIza[0-9A-Za-z\-_]{35}\b/g, "[REDACTED]");
+  apply(/\bya29\.[0-9A-Za-z\-_]+\b/g, "[REDACTED]");
+  apply(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED]");
+
+  return { text, count };
+}
+
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -1174,6 +1243,8 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
   const tone = (aiConfig.get<string>("tone", "standard") ?? "standard").trim();
   const previewPrompt =
     aiConfig.get<boolean>("previewPrompt", true) ?? true;
+  const redactSensitive =
+    aiConfig.get<boolean>("redactSensitive", true) ?? true;
 
   let promptTemplate: string;
   try {
@@ -1191,6 +1262,9 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
       ? "maxChars"
       : "maxLines"
     : "none";
+  const redactionNote = redactSensitive
+    ? "Sensitive values were redacted and replaced with [REDACTED]."
+    : "Redaction disabled.";
   const prompt = applyPromptTemplate(promptTemplate, {
     BASELINE: baselineMarkdown,
     FILES: formatFileChanges(data.files),
@@ -1199,10 +1273,18 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     DIFF_LINES: String(aiDiff.analyzedLines),
     DIFF_TRUNCATED_REASON: truncatedReason,
     TONE: tone,
+    REDACTION_NOTE: redactionNote,
   });
+  const redactedPrompt = redactSensitive
+    ? redactSensitiveContent(prompt).text
+    : prompt;
 
   const promptTitle = "PRD_AI_PROMPT.txt";
-  const confirmSend = await confirmAiSend(prompt, promptTitle, previewPrompt);
+  const confirmSend = await confirmAiSend(
+    redactedPrompt,
+    promptTitle,
+    previewPrompt
+  );
   if (!confirmSend) {
     await vscode.window.showInformationMessage("Generation canceled.");
     return;
@@ -1227,7 +1309,7 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
 
         const provider = createProvider(providerId);
         const input: AIInput = {
-          prompt,
+          prompt: redactedPrompt,
           apiKey,
           endpoint,
           model,

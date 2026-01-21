@@ -130,6 +130,11 @@
           "type": "boolean",
           "default": true,
           "description": "Preview the exact AI prompt in a new tab before the request."
+        },
+        "prd.ai.redactSensitive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Redact common secrets (tokens, passwords, keys) before sending to AI."
         }
       }
     }

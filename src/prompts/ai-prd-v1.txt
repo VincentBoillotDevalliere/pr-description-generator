@@ -39,6 +39,8 @@ Rules:
 
 Inputs:
 
+Redaction: {{REDACTION_NOTE}}
+
 BASELINE DESCRIPTION:
 {{BASELINE}}
 
