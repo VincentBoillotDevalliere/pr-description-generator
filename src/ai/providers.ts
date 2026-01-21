@@ -8,6 +8,7 @@ export type AIInput = {
   endpoint: string;
   model: string;
   timeoutMs: number;
+  signal?: AbortSignal;
 };
 
 export interface AIProvider {
@@ -30,9 +31,15 @@ function postJson(
   url: string,
   headers: Record<string, string>,
   body: string,
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("Request canceled"));
+      return;
+    }
+
     const parsedUrl = new URL(url);
     const isHttps = parsedUrl.protocol === "https:";
     const client = isHttps ? https : http;
@@ -55,6 +62,9 @@ function postJson(
       });
       response.on("end", () => {
         const responseBody = Buffer.concat(chunks).toString("utf8");
+        if (signal) {
+          signal.removeEventListener("abort", onAbort);
+        }
         resolve({
           statusCode: response.statusCode ?? 0,
           body: responseBody,
@@ -63,8 +73,27 @@ function postJson(
     });
 
     request.on("error", (error) => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      if (
+        signal?.aborted &&
+        error instanceof Error &&
+        error.message === "Request canceled"
+      ) {
+        reject(new Error("Request canceled"));
+        return;
+      }
       reject(error);
     });
+
+    const onAbort = () => {
+      request.destroy(new Error("Request canceled"));
+    };
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort);
+    }
 
     request.setTimeout(timeoutMs, () => {
       request.destroy(new Error("Request timed out"));
@@ -97,7 +126,8 @@ class OpenAICompatibleProvider implements AIProvider {
         "Content-Type": "application/json",
       },
       payload,
-      input.timeoutMs
+      input.timeoutMs,
+      input.signal
     );
 
     let data: unknown;

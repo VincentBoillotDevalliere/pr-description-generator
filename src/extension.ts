@@ -1204,25 +1204,58 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
   const promptTitle = "PRD_AI_PROMPT.txt";
   const confirmSend = await confirmAiSend(prompt, promptTitle, previewPrompt);
   if (!confirmSend) {
+    await vscode.window.showInformationMessage("Generation canceled.");
     return;
   }
 
-  let aiMarkdown = baselineMarkdown;
+  let aiMarkdown: string | null = null;
+  let canceledByUser = false;
+  const abortController = new AbortController();
+
   try {
-    const provider = createProvider(providerId);
-    const input: AIInput = {
-      prompt,
-      apiKey,
-      endpoint,
-      model,
-      timeoutMs,
-    };
-    aiMarkdown = await provider.generatePRDescription(input);
+    aiMarkdown = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "PRD: Generation in progress",
+        cancellable: true,
+      },
+      async (_progress, token) => {
+        token.onCancellationRequested(() => {
+          canceledByUser = true;
+          abortController.abort();
+        });
+
+        const provider = createProvider(providerId);
+        const input: AIInput = {
+          prompt,
+          apiKey,
+          endpoint,
+          model,
+          timeoutMs,
+          signal: abortController.signal,
+        };
+
+        return await provider.generatePRDescription(input);
+      }
+    );
   } catch (error) {
+    if (
+      canceledByUser ||
+      abortController.signal.aborted ||
+      getErrorMessage(error).toLowerCase().includes("canceled")
+    ) {
+      await vscode.window.showInformationMessage("Generation canceled.");
+      return;
+    }
     await vscode.window.showErrorMessage(
       `AI enhancement failed: ${getErrorMessage(error)}`
     );
     aiMarkdown = baselineMarkdown;
+  }
+
+  if (!aiMarkdown) {
+    await vscode.window.showInformationMessage("Generation canceled.");
+    return;
   }
 
   await openMarkdownDocument(aiMarkdown);
