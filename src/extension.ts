@@ -1338,7 +1338,7 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     DIFF_LINES: String(aiDiff.analyzedLines),
     DIFF_TRUNCATED_REASON: truncatedReason,
     TONE: tone,
-    REDACTION_NOTE: `${redactionNote} ${redactionSummary}`.trim(),
+    REDACTION_NOTE: `${redactionNote}`.trim(),
   });
   const redactionResult = redactSensitive
     ? redactSensitiveContent(prompt, customPatternsResult.patterns)
