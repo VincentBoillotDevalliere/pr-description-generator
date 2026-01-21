@@ -24,6 +24,7 @@ type PreparedDiff = {
 
 let extensionRoot: string | null = null;
 let promptTemplateCache: string | null = null;
+let extensionGlobalState: vscode.Memento | null = null;
 
 function formatList(items: string[], maxItems: number): string {
   if (items.length <= maxItems) {
@@ -50,6 +51,28 @@ async function getPromptTemplate(): Promise<string> {
   const content = await fs.promises.readFile(promptPath, "utf8");
   promptTemplateCache = content;
   return content;
+}
+
+async function ensureAiConsent(): Promise<boolean> {
+  if (!extensionGlobalState) {
+    return true;
+  }
+  const key = "prd.ai.consentShown";
+  if (extensionGlobalState.get<boolean>(key, false)) {
+    return true;
+  }
+  const message =
+    "AI enhancement will send the (truncated) diff, list of changed files, and the local PR description to your configured AI endpoint. No data is stored by the extension.";
+  const choice = await vscode.window.showWarningMessage(
+    message,
+    "Continue",
+    "Cancel"
+  );
+  if (choice !== "Continue") {
+    return false;
+  }
+  await extensionGlobalState.update(key, true);
+  return true;
 }
 
 function extractCurrentPath(path: string): string {
@@ -865,6 +888,29 @@ async function openMarkdownDocument(content: string): Promise<void> {
   });
 }
 
+async function openTextPreviewDocument(
+  content: string,
+  title: string
+): Promise<void> {
+  const uri = vscode.Uri.parse(`untitled:${title}`);
+  const document = await vscode.workspace.openTextDocument(uri);
+
+  if (document.languageId !== "plaintext") {
+    await vscode.languages.setTextDocumentLanguage(document, "plaintext");
+  }
+
+  const editor = await vscode.window.showTextDocument(document, {
+    preview: false,
+  });
+  const lastLine = document.lineCount - 1;
+  const lastCharacter = document.lineAt(lastLine).text.length;
+  const fullRange = new vscode.Range(0, 0, lastLine, lastCharacter);
+
+  await editor.edit((edit) => {
+    edit.replace(fullRange, content);
+  });
+}
+
 type WorkspacePick = {
   label: string;
   description: string;
@@ -1087,6 +1133,11 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     return;
   }
 
+  const consentOk = await ensureAiConsent();
+  if (!consentOk) {
+    return;
+  }
+
   const endpoint =
     (aiConfig.get<string>(
       "endpoint",
@@ -1108,6 +1159,8 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     200
   );
   const tone = (aiConfig.get<string>("tone", "standard") ?? "standard").trim();
+  const previewPrompt =
+    aiConfig.get<boolean>("previewPrompt", true) ?? true;
 
   let promptTemplate: string;
   try {
@@ -1134,6 +1187,10 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     DIFF_TRUNCATED_REASON: truncatedReason,
     TONE: tone,
   });
+
+  if (previewPrompt) {
+    await openTextPreviewDocument(prompt, "PRD_AI_PROMPT.txt");
+  }
 
   let aiMarkdown = baselineMarkdown;
   try {
@@ -1301,6 +1358,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   extensionRoot = context.extensionPath;
+  extensionGlobalState = context.globalState;
   const stagedDisposable = vscode.commands.registerCommand(
     "prd.generateDescriptionStaged",
     generateDescriptionFromStaged

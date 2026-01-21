@@ -113,6 +113,11 @@
           "default": "standard",
           "enum": ["concise", "standard", "detailed"],
           "description": "Tone for AI-enhanced descriptions."
+        },
+        "prd.ai.previewPrompt": {
+          "type": "boolean",
+          "default": true,
+          "description": "Preview the exact AI prompt in a new tab before the request."
         }
       }
     }

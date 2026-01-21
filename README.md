@@ -159,6 +159,15 @@ Tone for AI-enhanced descriptions (`concise`, `standard`, `detailed`).
 
 ---
 
+### `prd.ai.previewPrompt` (default: `true`)
+Preview the exact AI prompt in a new tab before the request.
+
+```json
+"prd.ai.previewPrompt": true
+```
+
+---
+
 ## Output format
 
 The generated PR description is structured Markdown, typically including:
