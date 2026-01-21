@@ -11,7 +11,10 @@ Return ONLY Markdown with these sections, in this exact order:
 
 Rules:
 - Use only the information provided below. Do not speculate.
-- Keep bullets concise and reviewer-friendly.
+- Keep bullets concise and reviewer-friendly (no jargon).
+- Summary must explain the "why" at a high level, not implementation details.
+- Include a "Reviewer takeaway" bullet in Summary that lets a reviewer understand the PR in <30 seconds.
+- Changes must be grouped by theme (API, UI, infra, tests, docs, config). Use labeled bullets like "API: ...".
 - Do NOT include a raw file list.
 - If information is missing, say "Not enough info" for that bullet.
 - If the diff is truncated, mention that analysis is partial in Summary.
