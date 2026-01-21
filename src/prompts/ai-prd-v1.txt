@@ -9,6 +9,12 @@ Return ONLY Markdown with these sections, in this exact order:
 ## Risk / Impact
 ## Rollout / Backout
 
+Tone:
+- Use the requested tone: {{TONE}}.
+  - concise: short bullets, minimal details
+  - standard: balanced detail (default)
+  - detailed: more context for complex changes
+
 Rules:
 - Use only the information provided below. Do not speculate.
 - Keep bullets concise and reviewer-friendly (no jargon).
@@ -22,6 +28,11 @@ Rules:
   - [ ] Manual tests:
     - ...
 - If no tests are detected in the diff, explicitly say "No tests were changed, please verify manually" under Manual tests.
+- Risk / Impact must include:
+  - Level: Low | Medium | High
+  - Justification: short, explicit reason tied to the diff
+  - Areas impacted: backend / frontend / infra / data / security (list only what's supported by the diff)
+- Never output High without a justification.
 - Do NOT include a raw file list.
 - If information is missing, say "Not enough info" for that bullet.
 - If the diff is truncated, mention that analysis is partial in Summary.

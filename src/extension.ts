@@ -1107,6 +1107,7 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     aiConfig.get<number>("maxDiffChars", 12000) ?? 12000,
     200
   );
+  const tone = (aiConfig.get<string>("tone", "standard") ?? "standard").trim();
 
   let promptTemplate: string;
   try {
@@ -1131,6 +1132,7 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     DIFF_TRUNCATED: aiDiff.truncated ? "yes" : "no",
     DIFF_LINES: String(aiDiff.analyzedLines),
     DIFF_TRUNCATED_REASON: truncatedReason,
+    TONE: tone,
   });
 
   let aiMarkdown = baselineMarkdown;

@@ -150,6 +150,15 @@ Maximum number of diff characters sent to the AI.
 
 ---
 
+### `prd.ai.tone` (default: `"standard"`)
+Tone for AI-enhanced descriptions (`concise`, `standard`, `detailed`).
+
+```json
+"prd.ai.tone": "standard"
+```
+
+---
+
 ## Output format
 
 The generated PR description is structured Markdown, typically including:
