@@ -186,6 +186,18 @@ Redact common secrets (tokens, passwords, keys) before sending to AI.
 
 ---
 
+### `prd.ai.redactPatterns` (default: `[]`)
+Custom regex patterns to redact before sending to AI.
+
+```json
+"prd.ai.redactPatterns": [
+  "password\\s*=\\s*[^\\s]+",
+  "/secret\\s*=.*/i"
+]
+```
+
+---
+
 ## Output format
 
 The generated PR description is structured Markdown, typically including:

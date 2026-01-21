@@ -705,7 +705,56 @@ type RedactionResult = {
   count: number;
 };
 
-function redactSensitiveContent(input: string): RedactionResult {
+type CustomPatternParseResult = {
+  patterns: RegExp[];
+  invalid: string[];
+};
+
+function buildCustomRedactionPatterns(
+  patterns: string[]
+): CustomPatternParseResult {
+  const result: RegExp[] = [];
+  const invalid: string[] = [];
+
+  for (const raw of patterns) {
+    const pattern = raw.trim();
+    if (!pattern) {
+      continue;
+    }
+
+    let regex: RegExp | null = null;
+    if (pattern.startsWith("/") && pattern.lastIndexOf("/") > 0) {
+      const lastSlash = pattern.lastIndexOf("/");
+      const body = pattern.slice(1, lastSlash);
+      const flags = pattern.slice(lastSlash + 1);
+      try {
+        const normalizedFlags = flags.includes("g") ? flags : `${flags}g`;
+        regex = new RegExp(body, normalizedFlags);
+      } catch (error) {
+        regex = null;
+      }
+    } else {
+      try {
+        regex = new RegExp(pattern, "g");
+      } catch (error) {
+        regex = null;
+      }
+    }
+
+    if (regex) {
+      result.push(regex);
+    } else {
+      invalid.push(pattern);
+    }
+  }
+
+  return { patterns: result, invalid };
+}
+
+function redactSensitiveContent(
+  input: string,
+  customPatterns: RegExp[]
+): RedactionResult {
   let text = input;
   let count = 0;
 
@@ -765,6 +814,10 @@ function redactSensitiveContent(input: string): RedactionResult {
   apply(/\bAIza[0-9A-Za-z\-_]{35}\b/g, "[REDACTED]");
   apply(/\bya29\.[0-9A-Za-z\-_]+\b/g, "[REDACTED]");
   apply(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED]");
+
+  for (const regex of customPatterns) {
+    apply(regex, "[REDACTED]");
+  }
 
   return { text, count };
 }
@@ -1245,6 +1298,8 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     aiConfig.get<boolean>("previewPrompt", true) ?? true;
   const redactSensitive =
     aiConfig.get<boolean>("redactSensitive", true) ?? true;
+  const redactPatterns =
+    aiConfig.get<string[]>("redactPatterns", []) ?? [];
 
   let promptTemplate: string;
   try {
@@ -1262,6 +1317,16 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
       ? "maxChars"
       : "maxLines"
     : "none";
+  const customPatternsResult = buildCustomRedactionPatterns(redactPatterns);
+  if (customPatternsResult.invalid.length > 0) {
+    await vscode.window.showWarningMessage(
+      `Some redaction patterns are invalid and were ignored: ${formatList(
+        customPatternsResult.invalid,
+        3
+      )}`
+    );
+  }
+
   const redactionNote = redactSensitive
     ? "Sensitive values were redacted and replaced with [REDACTED]."
     : "Redaction disabled.";
@@ -1273,11 +1338,19 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     DIFF_LINES: String(aiDiff.analyzedLines),
     DIFF_TRUNCATED_REASON: truncatedReason,
     TONE: tone,
-    REDACTION_NOTE: redactionNote,
+    REDACTION_NOTE: `${redactionNote} ${redactionSummary}`.trim(),
   });
-  const redactedPrompt = redactSensitive
-    ? redactSensitiveContent(prompt).text
-    : prompt;
+  const redactionResult = redactSensitive
+    ? redactSensitiveContent(prompt, customPatternsResult.patterns)
+    : { text: prompt, count: 0 };
+  const redactedPrompt = redactionResult.text;
+  const redactionSummary = redactSensitive
+    ? redactionResult.count > 0
+      ? `Redaction applied (${redactionResult.count} match${
+          redactionResult.count === 1 ? "" : "es"
+        }).`
+      : "Redaction enabled (no matches)."
+    : "Redaction disabled.";
 
   const promptTitle = "PRD_AI_PROMPT.txt";
   const confirmSend = await confirmAiSend(

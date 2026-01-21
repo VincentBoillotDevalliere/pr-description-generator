@@ -135,6 +135,14 @@
           "type": "boolean",
           "default": true,
           "description": "Redact common secrets (tokens, passwords, keys) before sending to AI."
+        },
+        "prd.ai.redactPatterns": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Custom regex patterns to redact before sending to AI (e.g., \"password\\\\s*=\\\\s*[^\\\\s]+\" or \"/secret\\\\s*=.*/i\")."
         }
       }
     }
