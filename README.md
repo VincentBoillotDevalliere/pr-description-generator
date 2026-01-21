@@ -105,6 +105,15 @@ API key used for AI enhancements.
 
 ---
 
+### `prd.ai.provider` (default: `"openai"`)
+AI provider to use (OpenAI-compatible for now).
+
+```json
+"prd.ai.provider": "openai"
+```
+
+---
+
 ### `prd.ai.endpoint` (default: `https://api.openai.com/v1/chat/completions`)
 OpenAI-compatible endpoint for AI requests.
 

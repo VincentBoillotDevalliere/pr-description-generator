@@ -80,6 +80,12 @@
           "default": "",
           "description": "API key used for AI-enhanced PR descriptions."
         },
+        "prd.ai.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai"],
+          "description": "AI provider to use (OpenAI-compatible for now)."
+        },
         "prd.ai.endpoint": {
           "type": "string",
           "default": "https://api.openai.com/v1/chat/completions",
