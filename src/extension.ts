@@ -793,6 +793,30 @@ async function openTextPreviewDocument(
   });
 }
 
+async function confirmAiSend(
+  prompt: string,
+  promptTitle: string,
+  previewPrompt: boolean
+): Promise<boolean> {
+  if (previewPrompt) {
+    await openTextPreviewDocument(prompt, promptTitle);
+    const confirmation = await vscode.window.showInputBox({
+      prompt: `Review ${promptTitle}, then type SEND to continue.`,
+      placeHolder: "Type SEND to confirm, or leave blank to cancel.",
+      ignoreFocusOut: true,
+    });
+    return confirmation?.trim().toLowerCase() === "send" || confirmation?.trim().toLowerCase() === "";
+  }
+
+  const choice = await vscode.window.showWarningMessage(
+    "Send the generated prompt (diff, files, and baseline description) to the AI provider?",
+    { modal: true },
+    "Send",
+    "Cancel"
+  );
+  return choice === "Send";
+}
+
 type WorkspacePick = {
   label: string;
   description: string;
@@ -1177,17 +1201,9 @@ async function generateDescriptionAiEnhanced(): Promise<void> {
     TONE: tone,
   });
 
-  if (previewPrompt) {
-    await openTextPreviewDocument(prompt, "PRD_AI_PROMPT.txt");
-  }
-
-  const confirmSend = await vscode.window.showWarningMessage(
-    "Send the generated prompt (diff, files, and baseline description) to the AI provider?",
-    { modal: true },
-    "Send",
-    "Cancel"
-  );
-  if (confirmSend !== "Send") {
+  const promptTitle = "PRD_AI_PROMPT.txt";
+  const confirmSend = await confirmAiSend(prompt, promptTitle, previewPrompt);
+  if (!confirmSend) {
     return;
   }
 
