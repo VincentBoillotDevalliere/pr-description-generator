@@ -17,6 +17,14 @@ type PreparedDiff = {
   analyzedLines: number;
 };
 
+function formatList(items: string[], maxItems: number): string {
+  if (items.length <= maxItems) {
+    return items.join(", ");
+  }
+  const remaining = items.length - maxItems;
+  return `${items.slice(0, maxItems).join(", ")}, and ${remaining} more`;
+}
+
 function extractCurrentPath(path: string): string {
   const arrowIndex = path.lastIndexOf("->");
   if (arrowIndex === -1) {
@@ -154,31 +162,11 @@ function buildChangeBullets(files: FileChange[]): string[] {
     }
   };
 
-  const formatList = (items: string[], maxItems: number): string => {
-    if (items.length <= maxItems) {
-      return items.join(", ");
-    }
-    const remaining = items.length - maxItems;
-    return `${items.slice(0, maxItems).join(", ")}, and ${remaining} more`;
-  };
-
-  const statusCounts: Record<FileStatus, number> = {
-    Added: 0,
-    Modified: 0,
-    Deleted: 0,
-    Renamed: 0,
-  };
-
-  const folderCounts = new Map<string, number>();
-  let rootCount = 0;
-
   let uiTouched = 0;
   let apiTouched = 0;
   let scriptsTouched = 0;
   let docsTouched = 0;
   let assetsTouched = 0;
-  let dataTouched = 0;
-  let translationsTouched = 0;
   let testsTouched = 0;
 
   let dependenciesTouched = false;
@@ -188,15 +176,6 @@ function buildChangeBullets(files: FileChange[]): string[] {
   let authTouched = false;
 
   for (const file of files) {
-    statusCounts[file.status] += 1;
-
-    const folder = getTopLevelFolder(file.path);
-    if (folder) {
-      folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
-    } else {
-      rootCount += 1;
-    }
-
     const normalized = normalizeGroupingPath(file.path).toLowerCase();
     const extension = normalized.includes(".")
       ? normalized.slice(normalized.lastIndexOf(".") + 1)
@@ -222,20 +201,6 @@ function buildChangeBullets(files: FileChange[]): string[] {
       normalized.includes("/public/")
     ) {
       assetsTouched += 1;
-    }
-
-    if (
-      normalized.includes("/i18n/") ||
-      normalized.includes("/locales/") ||
-      normalized.includes("/l10n/")
-    ) {
-      translationsTouched += 1;
-    }
-
-    if (
-      ["csv", "tsv", "xlsx", "jsonl"].includes(extension)
-    ) {
-      dataTouched += 1;
     }
 
     if (
@@ -318,45 +283,6 @@ function buildChangeBullets(files: FileChange[]): string[] {
     }
   }
 
-  const statusParts: string[] = [];
-  if (statusCounts.Added > 0) {
-    statusParts.push(`${statusCounts.Added} added`);
-  }
-  if (statusCounts.Modified > 0) {
-    statusParts.push(`${statusCounts.Modified} modified`);
-  }
-  if (statusCounts.Deleted > 0) {
-    statusParts.push(`${statusCounts.Deleted} deleted`);
-  }
-  if (statusCounts.Renamed > 0) {
-    statusParts.push(`${statusCounts.Renamed} renamed`);
-  }
-  if (statusParts.length > 0) {
-    pushBullet(`File operations: ${statusParts.join(", ")}.`);
-  }
-
-  if (folderCounts.size > 0 || rootCount > 0) {
-    const sorted = Array.from(folderCounts.entries()).sort((a, b) => {
-      if (b[1] !== a[1]) {
-        return b[1] - a[1];
-      }
-      return a[0].localeCompare(b[0]);
-    });
-
-    const top = sorted.slice(0, 3).map(([folder, count]) => ({
-      label: `${folder}/ (${count})`,
-      count,
-    }));
-
-    if (rootCount > 0 && top.length < 3) {
-      top.push({ label: `root files (${rootCount})`, count: rootCount });
-    }
-
-    if (top.length > 0) {
-      pushBullet(`Primary areas: ${top.map((entry) => entry.label).join(", ")}.`);
-    }
-  }
-
   const signals: string[] = [];
   if (dependenciesTouched) {
     signals.push("dependencies");
@@ -374,7 +300,7 @@ function buildChangeBullets(files: FileChange[]): string[] {
     signals.push("infra");
   }
   if (signals.length > 0) {
-    pushBullet(`Signals detected: ${signals.join(", ")}.`);
+    pushBullet(`Sensitive areas: ${signals.join(", ")}.`);
   }
 
   const focusAreas: string[] = [];
@@ -393,12 +319,6 @@ function buildChangeBullets(files: FileChange[]): string[] {
   if (assetsTouched > 0) {
     focusAreas.push("assets");
   }
-  if (dataTouched > 0) {
-    focusAreas.push("data files");
-  }
-  if (translationsTouched > 0) {
-    focusAreas.push("localization");
-  }
   if (testsTouched > 0) {
     focusAreas.push("tests");
   }
@@ -406,27 +326,80 @@ function buildChangeBullets(files: FileChange[]): string[] {
     pushBullet(`Touches: ${formatList(focusAreas, 6)}.`);
   }
 
-  if (testsTouched > 0) {
-    pushBullet(
-      `Tests updated: ${testsTouched} file${testsTouched === 1 ? "" : "s"}.`
-    );
+  if (uiTouched > 0 && apiTouched > 0) {
+    pushBullet("Cross-layer change: UI and API/backend updated.");
   }
 
-  if (translationsTouched > 0) {
-    pushBullet(
-      `Localization updates: ${translationsTouched} file${
-        translationsTouched === 1 ? "" : "s"
-      }.`
-    );
-  }
-
-  if (dataTouched > 0) {
-    pushBullet(
-      `Data files updated: ${dataTouched} file${dataTouched === 1 ? "" : "s"}.`
-    );
+  if (dependenciesTouched) {
+    pushBullet("Dependencies updated.");
   }
 
   return bullets;
+}
+
+function buildReleaseNotesLines(files: FileChange[]): string[] {
+  const changelogFiles: string[] = [];
+  const releaseNoteFiles: string[] = [];
+  const docsFiles: string[] = [];
+
+  for (const file of files) {
+    const normalized = normalizeGroupingPath(file.path);
+    const lower = normalized.toLowerCase();
+    const parts = lower.split("/");
+    const filename = parts[parts.length - 1] || "";
+
+    if (
+      /^(changelog|change_log|changes|history|news|release[_-]?notes|releasenotes|upgrading|upgrade)(\..+)?$/.test(
+        filename
+      )
+    ) {
+      changelogFiles.push(normalized);
+    }
+
+    if (
+      lower.includes("/release/") ||
+      lower.includes("/releases/") ||
+      lower.includes("/release-notes/") ||
+      lower.includes("/releasenotes/") ||
+      lower.includes("/notes/") ||
+      lower.includes("/changelog/")
+    ) {
+      releaseNoteFiles.push(normalized);
+    }
+
+    if (
+      lower.startsWith("docs/") ||
+      lower.includes("/docs/")
+    ) {
+      docsFiles.push(normalized);
+    }
+  }
+
+  const lines: string[] = [];
+
+  if (changelogFiles.length > 0) {
+    lines.push(
+      `Changelog updated: ${formatList(changelogFiles, 3)}.`
+    );
+  }
+
+  if (releaseNoteFiles.length > 0) {
+    lines.push(
+      `Release notes touched: ${formatList(releaseNoteFiles, 3)}.`
+    );
+  }
+
+  if (docsFiles.length > 0) {
+    lines.push(`Docs updated: ${docsFiles.length} file${docsFiles.length === 1 ? "" : "s"}.`);
+  }
+
+  if (lines.length === 0) {
+    lines.push(
+      "No changelog or release-docs updates detected (add one if user-facing)."
+    );
+  }
+
+  return lines;
 }
 
 function execGit(command: string, cwd: string): Promise<string> {
@@ -760,6 +733,7 @@ async function buildStagedMarkdown(
   }
   const files = mergeChanges(stagedChanges, []);
   const changeBullets = buildChangeBullets(files);
+  const releaseNotesLines = buildReleaseNotesLines(files);
   const testingLines = buildTestingLines(files);
   const risk = buildRiskAssessment(files);
 
@@ -788,6 +762,7 @@ async function buildStagedMarkdown(
   const markdown = buildMarkdown({
     files,
     changeBullets,
+    releaseNotesLines,
     testingLines,
     riskLevel: risk.level,
     areasImpacted: risk.areas,
@@ -959,6 +934,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const workingChanges = parseNameStatus(filesOutputWorking);
   const files = mergeChanges(rangeChanges, workingChanges);
   const changeBullets = buildChangeBullets(files);
+  const releaseNotesLines = buildReleaseNotesLines(files);
   const testingLines = buildTestingLines(files);
   const risk = buildRiskAssessment(files);
   if (files.length === 0) {
@@ -977,6 +953,7 @@ async function generateDescriptionAgainstBase(): Promise<void> {
   const markdown = buildMarkdown({
     files,
     changeBullets,
+    releaseNotesLines,
     testingLines,
     riskLevel: risk.level,
     areasImpacted: risk.areas,

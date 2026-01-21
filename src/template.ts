@@ -8,6 +8,7 @@ export type FileChange = {
 export type TemplateOptions = {
   files: FileChange[];
   changeBullets: string[];
+  releaseNotesLines: string[];
   testingLines: string[];
   riskLevel: string;
   areasImpacted: string[];
@@ -26,6 +27,7 @@ export function buildMarkdown(options: TemplateOptions): string {
   const {
     files,
     changeBullets,
+    releaseNotesLines,
     testingLines,
     riskLevel,
     areasImpacted,
@@ -67,6 +69,11 @@ export function buildMarkdown(options: TemplateOptions): string {
     ...(changeBullets.length > 0
       ? changeBullets.map((line) => `- ${line}`)
       : [`- ${emptyChangesLine}`]),
+    "",
+    "## Release Notes",
+    ...(releaseNotesLines.length > 0
+      ? releaseNotesLines.map((line) => `- ${line}`)
+      : ["- No release-note candidates detected."]),
     "",
   ];
 
