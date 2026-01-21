@@ -15,6 +15,13 @@ Rules:
 - Summary must explain the "why" at a high level, not implementation details.
 - Include a "Reviewer takeaway" bullet in Summary that lets a reviewer understand the PR in <30 seconds.
 - Changes must be grouped by theme (API, UI, infra, tests, docs, config). Use labeled bullets like "API: ...".
+- Testing section must follow this format exactly:
+  ## Testing
+  - [x] Unit tests: ...
+  - [ ] Integration tests: ...
+  - [ ] Manual tests:
+    - ...
+- If no tests are detected in the diff, explicitly say "No tests were changed, please verify manually" under Manual tests.
 - Do NOT include a raw file list.
 - If information is missing, say "Not enough info" for that bullet.
 - If the diff is truncated, mention that analysis is partial in Summary.
